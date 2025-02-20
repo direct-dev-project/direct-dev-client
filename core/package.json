@@ -1,5 +1,5 @@
 {
-  "name": "@direct.dev/core",
+  "name": "@direct.dev/client",
   "version": "0.0.0",
   "type": "module",
   "files": [
@@ -11,6 +11,18 @@
     ".": {
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
+    },
+    "./ethers": {
+      "types": "./lib/index.ethers.d.ts",
+      "default": "./lib/index.ethers.js"
+    },
+    "./wagmi": {
+      "types": "./lib/index.wagmi.d.ts",
+      "default": "./lib/index.wagmi.js"
+    },
+    "./web3": {
+      "types": "./lib/index.web3.d.ts",
+      "default": "./lib/index.web3.js"
     }
   },
   "scripts": {

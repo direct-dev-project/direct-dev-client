@@ -420,7 +420,8 @@ export class DirectRPCClient {
       return;
     }
 
-    this.fetch({
+    this.#logger.debug("DirectRPCClient.#predictivePrimer", "requesting primer package for most popular requests");
+    this.#fetch({
       jsonrpc: "2.0",
       id: 1,
       method: "direct_primer",
@@ -439,7 +440,8 @@ export class DirectRPCClient {
 
     // hold back subsequent batches while we're waiting for a head from Direct
     if (this.#isDirectHeadPending) {
-      this.#nextBatchTimeout = window.setTimeout(this.#dispatchBatch, 1);
+      this.#logger.debug("DirectRPCClient.#dispatchBatch", "waiting for previous request head to be fetched");
+      this.#nextBatchTimeout = -Infinity;
       return;
     }
 
@@ -495,6 +497,13 @@ export class DirectRPCClient {
 
           this.#isDirectHeadPending = false;
 
+          if (this.#nextBatchTimeout === -Infinity) {
+            // if the next batch should already have been dispatched, then do so
+            // right away
+            this.#logger.debug("DirectRPCClient.#dispatchBatch", "head received, dispatching next batch immediately");
+            this.#dispatchBatch();
+          }
+
           // for all incoming predictions, instantly register them as being
           // inflight to prevent duplication on future events
           for (const predictedReqHash of response.p) {
@@ -532,7 +541,10 @@ export class DirectRPCClient {
         const promise = promises[+response.id - 1];
 
         if (!reqHash) {
-          this.#logger.error("dispatchBatch", "could not map response ID '%s' to request hash", response.id);
+          this.#logger.error(
+            "DirectRPCClient.#dispatchBatch",
+            `could not map response ID '${response.id}' to request hash, unable to resolve response`,
+          );
           continue;
         }
 
@@ -568,6 +580,13 @@ export class DirectRPCClient {
     } finally {
       // in case of errors, allow continued operations for subsequent batches
       this.#isDirectHeadPending = false;
+
+      if (this.#nextBatchTimeout === -Infinity) {
+        // if the next batch should already have been dispatched, then do so
+        // right away
+        this.#logger.debug("DirectRPCClient.#dispatchBatch", "unexpected error, dispatching next batch immediately");
+        this.#dispatchBatch();
+      }
     }
   };
 
@@ -615,9 +634,17 @@ export class DirectRPCClient {
           failureCount: prevFailureCount + 1,
           endsAt: now + 2 ** Math.min(8, prevFailureCount) * BASE_BACKOFF_DURATION_MS,
         };
+
+        this.#logger.debug(
+          "DirectRPCClient.#fetchFromDirect",
+          "backing off until",
+          new Date(this.#backoffMode["direct.dev"].endsAt),
+        );
       }
 
       // retry the same requests in failover-mode to guarantee
+      this.#logger.debug("DirectRPCClient.#fetchFromDirect", "retrying failed requests from providers", requests);
+
       this.#isDirectHeadPending = false;
       return this.#fetchFromProviders(requests);
     }
@@ -734,7 +761,7 @@ export class DirectRPCClient {
       if (!backoffMode || backoffMode.endsAt < now) {
         const prevFailureCount = backoffMode?.failureCount ?? 0;
 
-        this.#backoffMode["direct.dev"] = {
+        this.#backoffMode[node.url] = {
           failureCount: prevFailureCount + 1,
           endsAt: now + 2 ** Math.min(8, prevFailureCount) * BASE_BACKOFF_DURATION_MS,
         };

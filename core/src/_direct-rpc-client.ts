@@ -75,6 +75,21 @@ type Config = {
   batchWindowMs?: number;
 
   /**
+   * If development mode is enabled, then the client will bypass Direct.dev
+   * infrastructure by default for end-users. However, developers can opt into
+   * this integration by adding ?directdev=true to the window URL.
+   *
+   * @note When enabling devMode, request batching is automatically disabled for
+   *       end-users to more closely mimic default behaviour.
+   *
+   * @note We recommend configuring logLevel to "debug" for maximum output
+   *       verbosity while debugging issues.
+   *
+   * @default false
+   */
+  devMode?: boolean;
+
+  /**
    * Collection of upstream data provider URLs; we utilize these providers in
    * case of downtime on Direct.dev to provide automatic fail-over directly to
    * your own provider nodes.
@@ -118,6 +133,12 @@ type FetchOutput = DirectRPCSuccessResponse | DirectRPCErrorResponse;
  */
 export class DirectRPCClient {
   #logger: Logger;
+
+  /**
+   * specifies if client should bypass Direct.dev infrastructure, as it is
+   * currently in development mode.
+   */
+  #devMode: boolean;
 
   /**
    * cache of the Direct.dev infrastructure entry worker URL, based on initial
@@ -229,6 +250,8 @@ export class DirectRPCClient {
 
   constructor(config: Config) {
     this.#directUrl = `${config.baseUrl ?? "https://direct.dev"}/v1/rpc/${encodeURIComponent(config.projectId)}/${encodeURIComponent(config.networkId)}`;
+    this.#devMode =
+      !!config.devMode && (typeof location === "undefined" || !location.search.includes("directdev=true"));
     this.#batchWindowMs = config.batchWindowMs ?? 50;
 
     // re-map configuration format for providers to internal representation
@@ -271,6 +294,42 @@ export class DirectRPCClient {
   async fetch(req: FetchInput): Promise<FetchOutput>;
   async fetch(req: FetchInput[]): Promise<FetchOutput[]>;
   async fetch(req: MaybeArray<FetchInput>): Promise<MaybeArray<FetchOutput>> {
+    //
+    // STEP: bypass internal mechanisms completely when operating in
+    // development mode
+    //
+    if (this.#devMode) {
+      if (Array.isArray(req)) {
+        return this.#fetchChunkFromProviders(req, undefined) as Promise<FetchOutput[]>;
+      } else {
+        const res = await this.#fetchChunkFromProviders([req], undefined);
+
+        return res[0] as FetchOutput;
+      }
+    }
+
+    //
+    // STEP: if a singular request was given, then verify if the request is
+    // supported in the Direct.dev infrastructure - and if not, dispatch it
+    // directly to the upstream provider
+    //
+    if (!Array.isArray(req) && !isSupportedRequest(req)) {
+      for await (const response of this.#fetchFromProviders([req], deriveProviderFromRequest(req))) {
+        if (!isRpcSuccessResponse(response) && !isRpcErrorResponse(response)) {
+          throw new Error("DirectRPCClient.fetch: received invalid response structure");
+        }
+
+        return response;
+      }
+
+      this.#logger.error("fetch", "no response received for request", req);
+      throw new Error("DirectRPCClient.fetch: no response received for request");
+    }
+
+    //
+    // STEP: otherwise run the request(s) through the Direct.dev processing
+    // pipeline
+    //
     try {
       if (!Array.isArray(req)) {
         return this.#fetch(req);
@@ -301,24 +360,6 @@ export class DirectRPCClient {
 
     if (this.#isDestroyed) {
       throw new Error("DirectRPCClient.#fetch(): called after destroying the client instance.");
-    }
-
-    //
-    // STEP: verify whether or not the request can be dispatched through the
-    // Direct.dev middleware - and if not, dispatch it straight away to the
-    // configured provider nodes bypassing Direct.dev
-    //
-    if (!isSupportedRequest(req)) {
-      for await (const response of this.#fetchFromProviders([req], deriveProviderFromRequest(req))) {
-        if (!isRpcSuccessResponse(response) && !isRpcErrorResponse(response)) {
-          throw new Error("DirectRPCClient.#dispatchBatch: received invalid response structure");
-        }
-
-        return response;
-      }
-
-      this.#logger.error("fetch", "no response received for request", req);
-      throw new Error("DirectRPCClient.fetch: no response received for request");
     }
 
     return (
@@ -375,6 +416,10 @@ export class DirectRPCClient {
    * current context.
    */
   async #predictivePrimer() {
+    if (this.#devMode) {
+      return;
+    }
+
     this.fetch({
       jsonrpc: "2.0",
       id: 1,

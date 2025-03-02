@@ -24,14 +24,6 @@ import { isSupportedRequest } from "./util.is-supported-request.js";
 import { normalizeContextFromUrl } from "./util.normalize-url.js";
 
 /**
- * specifies the desired interval in which to run request batches; providing
- * the DirectClient a very small (and to users imperceivable) window of
- * opportunity for batching multiple concurrent RPC requests into a single
- * network request.
- */
-const BATCH_DEBOUNCE_MS = 50;
-
-/**
  * configures the maximum number of requests to dispatch within a single
  * request batch.
  */
@@ -70,6 +62,19 @@ type Config = {
   logLevel?: LogLevel;
 
   /**
+   * Specifies the duration during which requests are batched, causing a slight
+   * delay between initial request until requests are submitted to the
+   * Direct.dev backend, but reducing network overhead by combining multiple
+   * requests into one.
+   *
+   * @note Providing a negative value will bypass batching altogether and submit
+   *       requests instantly.
+   *
+   * @default 50
+   */
+  batchWindowMs?: number;
+
+  /**
    * Collection of upstream data provider URLs; we utilize these providers in
    * case of downtime on Direct.dev to provide automatic fail-over directly to
    * your own provider nodes.
@@ -102,6 +107,11 @@ type CacheEntry = {
   };
 };
 
+type MaybeArray<T> = T | T[];
+
+type FetchInput = DirectRPCRequest & { jsonrpc: string };
+type FetchOutput = DirectRPCSuccessResponse | DirectRPCErrorResponse;
+
 /**
  * Core client used to perform RPC requests from client to the Direct.dev
  * infrastructure
@@ -114,6 +124,11 @@ export class DirectRPCClient {
    * configurations supplied to the client.
    */
   #directUrl: string;
+
+  /**
+   * configuration of batch window as provided when instantiating the client.
+   */
+  #batchWindowMs: number;
 
   /**
    * cache of the list of provider nodes, used to perform fail-over handling in
@@ -214,6 +229,7 @@ export class DirectRPCClient {
 
   constructor(config: Config) {
     this.#directUrl = `${config.baseUrl ?? "https://direct.dev"}/v1/rpc/${encodeURIComponent(config.projectId)}/${encodeURIComponent(config.networkId)}`;
+    this.#batchWindowMs = config.batchWindowMs ?? 50;
 
     // re-map configuration format for providers to internal representation
     this.#providerNodes = config.providers.map((it) =>
@@ -249,17 +265,42 @@ export class DirectRPCClient {
   }
 
   /**
+   * performs one or more requests, dispatching them towards the relevant
+   * upstream nodes depending on input and configurations.
+   */
+  async fetch(req: FetchInput): Promise<FetchOutput>;
+  async fetch(req: FetchInput[]): Promise<FetchOutput[]>;
+  async fetch(req: MaybeArray<FetchInput>): Promise<MaybeArray<FetchOutput>> {
+    try {
+      if (!Array.isArray(req)) {
+        return this.#fetch(req);
+      } else {
+        return Promise.all(req.map((it) => this.#fetch(it)));
+      }
+    } finally {
+      if (this.#batchWindowMs < 0) {
+        // if batching has been disabled, then dispatch the requests immediately
+        this.#dispatchBatch();
+      } else if (this.#nextBatchTimeout === undefined) {
+        // ... otherwise set a timeout, which will dispatch batched requests
+        // after the defined delay/window
+        this.#nextBatchTimeout = window.setTimeout(this.#dispatchBatch, this.#batchWindowMs);
+      }
+    }
+  }
+
+  /**
    * handles the request, either by delivering a response from in-memory cache
    * or by adding it to the next batch of requests that will be dispatched
    * shortly.
    */
-  async fetch(req: DirectRPCRequest & { jsonrpc: string }): Promise<DirectRPCSuccessResponse | DirectRPCErrorResponse> {
+  async #fetch(req: FetchInput): Promise<FetchOutput> {
     if (!isRpcRequest(req)) {
-      throw new Error("DirectRPCClient.fetch(): invalid input provided, must conform to jsonrpc spec.");
+      throw new Error("DirectRPCClient.#fetch(): invalid input provided, must conform to jsonrpc spec.");
     }
 
     if (this.#isDestroyed) {
-      return makeDeferred();
+      throw new Error("DirectRPCClient.#fetch(): called after destroying the client instance.");
     }
 
     //
@@ -319,10 +360,6 @@ export class DirectRPCClient {
 
         this.#inflightCache.set(reqHash, promise);
         this.#nextBatch.set(reqHash, req);
-
-        if (this.#nextBatchTimeout === undefined) {
-          this.#nextBatchTimeout = window.setTimeout(this.#dispatchBatch, BATCH_DEBOUNCE_MS);
-        }
 
         return promise;
       })()

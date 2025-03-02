@@ -1,5 +1,3 @@
-import type { DirectRPCRequest } from "@direct.dev/shared";
-
 /**
  * tiny utility to determine if the given request is supported by the
  * Direct.dev middleware
@@ -10,7 +8,7 @@ import type { DirectRPCRequest } from "@direct.dev/shared";
  *
  * @todo (Kasper, 04-02-2025): review list of supported methods
  */
-export function isSupportedRequest(request: DirectRPCRequest & { jsonrpc: string }): boolean {
+export function isSupportedRequest(request: { jsonrpc: string; method: string }): boolean {
   if (request.jsonrpc !== "2.0") {
     // we only support jsonrpc 2.0 spec in Direct.dev, for any other requests
     // send straight to source

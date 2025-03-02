@@ -1,5 +1,6 @@
 {
   "name": "@direct.dev/shared",
+  "private": true,
   "version": "0.0.0",
   "type": "module",
   "files": [
@@ -20,7 +21,7 @@
     "dev:rollup": "rollup -c rollup.config.js --watch",
     "build": "rollup -c rollup.config.js",
     "build:typescript": "tsc -p tsconfig.json",
-    "prepublishOnly": "npm run build"
+    "client:publish": "npm publish"
   },
   "devDependencies": {
     "@direct.dev/tooling-eslint-config": "*",

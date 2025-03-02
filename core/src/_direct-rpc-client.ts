@@ -724,9 +724,6 @@ export class DirectRPCClient {
   /**
    * submit local cache hits that have not yet been sampled by the Direct.dev
    * RPC Agent, so that we ensure correctness of popularity scoring.
-   *
-   * @todo (Mads, 02-02-2025): implement route to handle beacons in rpc-cache,
-   *       so that we can correctly sample the requests.
    */
   #sendBeacon = () => {
     if (this.#cacheHits.length === 0) {

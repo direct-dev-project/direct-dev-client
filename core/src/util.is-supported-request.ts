@@ -5,8 +5,6 @@
  * for unsupported requests, we simply send them directly to configured
  * provider nodes to guarantee correctness of responses delivered in the
  * client.
- *
- * @todo (Kasper, 04-02-2025): review list of supported methods
  */
 export function isSupportedRequest(request: { jsonrpc: string; method: string }): boolean {
   if (request.jsonrpc !== "2.0") {
@@ -25,7 +23,6 @@ export function isSupportedRequest(request: { jsonrpc: string; method: string })
     case "blockNumber":
     case "call":
     case "chainId":
-    case "estimateGas":
     case "gasPrice":
     case "getBalance":
     case "getBlockByHash":
@@ -44,9 +41,6 @@ export function isSupportedRequest(request: { jsonrpc: string; method: string })
     case "getUncleCountByBlockHash":
     case "getUncleCountByBlockNumber":
     case "protocolVersion":
-    case "sendRawTransaction":
-    case "signTransaction":
-    case "syncing":
       return true;
   }
 

@@ -50,7 +50,7 @@ type Config = {
    * Override the baseUrl used when connecting to Direct infrastructure, useful
    * especially when running a local testing environment.
    *
-   * @default "https://direct.dev"
+   * @default "https://rpc.direct.dev/v1"
    */
   baseUrl?: string;
 
@@ -256,7 +256,7 @@ export class DirectRPCClient {
   #isDestroyed = false;
 
   constructor(config: Config) {
-    this.#directUrl = `${config.baseUrl ?? "https://direct.dev"}/v1/rpc/${encodeURIComponent(config.projectId)}/${encodeURIComponent(config.networkId)}`;
+    this.#directUrl = `${config.baseUrl ?? "https://rpc.direct.dev/v1"}/${encodeURIComponent(config.projectId)}/${encodeURIComponent(config.networkId)}`;
     this.#devMode =
       !!config.devMode && (typeof location === "undefined" || !location.search.includes("directdev=true"));
     this.#batchWindowMs = config.batchWindowMs ?? 50;

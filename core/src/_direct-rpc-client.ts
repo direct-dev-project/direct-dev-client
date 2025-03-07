@@ -232,7 +232,14 @@ export class DirectRPCClient {
    * submitted for popularity sampling in the RPC Agent upon next physical
    * request.
    */
-  #cacheHits: DirectRPCRequest[] = [];
+  #clientCacheHits: DirectRPCRequest[] = [];
+
+  /**
+   * internally collects requests returned from the inflight hit cache and
+   * their response times, so they can be submitted for sampling and analytics
+   * upon the next physical request.
+   */
+  #clientInflightHits: Array<[DirectRPCRequest, responseTimeMs: number]> = [];
 
   /**
    * specifies if a batch is currently dispatched to the Direct.dev
@@ -390,7 +397,11 @@ export class DirectRPCClient {
         const inflightPromise = this.#inflightCache.get(reqHash);
 
         if (inflightPromise) {
-          this.#cacheHits.push(req);
+          const startedAt = Date.now();
+
+          inflightPromise.then(() => {
+            this.#clientInflightHits.push([req, Date.now() - startedAt]);
+          });
 
           return inflightPromise;
         }
@@ -597,12 +608,14 @@ export class DirectRPCClient {
     this.#isDirectHeadPending = true;
 
     // submit request to the Direct.dev layer for further processing
-    const samples = this.#cacheHits.splice(0);
+    const cacheHits = this.#clientCacheHits.splice(0);
+    const inflightHits = this.#clientInflightHits.splice(0);
     const req = await fetch(this.#directUrl, {
       method: "POST",
       body: JSON.stringify({
         r: requests,
-        s: samples,
+        c: cacheHits,
+        i: inflightHits,
       }),
     });
 
@@ -621,7 +634,13 @@ export class DirectRPCClient {
 
       // restore in-memory copy of local cache hits, as we were unable to
       // sample them in the backend layer
-      this.#cacheHits.splice(0, 0, ...samples);
+      for (const hit of cacheHits) {
+        this.#clientCacheHits.push(hit);
+      }
+
+      for (const hit of inflightHits) {
+        this.#clientInflightHits.push(hit);
+      }
 
       // register the error internally, so we can perform exponential backoff
       // if we're not already in a backoff-period
@@ -798,7 +817,7 @@ export class DirectRPCClient {
    * RPC Agent, so that we ensure correctness of popularity scoring.
    */
   #sendBeacon = () => {
-    if (this.#cacheHits.length === 0) {
+    if (this.#clientCacheHits.length === 0) {
       return;
     }
 
@@ -806,7 +825,8 @@ export class DirectRPCClient {
       this.#directUrl,
       JSON.stringify({
         r: [],
-        s: this.#cacheHits.splice(0),
+        c: this.#clientCacheHits.splice(0),
+        i: this.#clientInflightHits.splice(0),
       }),
     );
   };

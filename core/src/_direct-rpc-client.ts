@@ -292,6 +292,7 @@ export class DirectRPCClient {
    */
   async fetch(req: FetchInput): Promise<FetchOutput>;
   async fetch(req: FetchInput[]): Promise<FetchOutput[]>;
+  async fetch(req: MaybeArray<FetchInput>): Promise<MaybeArray<FetchOutput>>;
   async fetch(req: MaybeArray<FetchInput>): Promise<MaybeArray<FetchOutput>> {
     //
     // STEP: bypass internal mechanisms completely when operating in

@@ -42,7 +42,7 @@ const BASE_BACKOFF_DURATION_MS = 5_000;
  * These values should be copy+pasted from the project dashboard as found on
  * your Direct.dev profile.
  */
-type Config = {
+export type DirectRPCClientConfig = {
   projectId: string;
   networkId: string;
 
@@ -242,21 +242,13 @@ export class DirectRPCClient {
   #clientInflightHits: Array<[DirectRPCRequest, responseTimeMs: number]> = [];
 
   /**
-   * specifies if a batch is currently dispatched to the Direct.dev
-   * infrastructure, without having received a response head - in this case, we
-   * hold back any subsequent batches to ensure that predictively prefetched
-   * ressources aren't duplicated
-   */
-  #isDirectHeadPending = false;
-
-  /**
    * specifies if this client instance has been destroyed, used to prevent
    * future requests from passing through.
    */
   #isDestroyed = false;
 
-  constructor(config: Config) {
-    this.#directUrl = `${config.baseUrl ?? "https://rpc.direct.dev/v1"}/${encodeURIComponent(config.projectId)}/${encodeURIComponent(config.networkId)}`;
+  constructor(config: DirectRPCClientConfig) {
+    this.#directUrl = `${config.baseUrl ?? "https://rpc.direct.dev"}/v1/${encodeURIComponent(config.projectId)}/${encodeURIComponent(config.networkId)}`;
     this.#devMode =
       !!config.devMode && (typeof location === "undefined" || !location.search.includes("directdev=true"));
     this.#batchWindowMs = config.batchWindowMs ?? 50;
@@ -347,7 +339,7 @@ export class DirectRPCClient {
       if (this.#batchWindowMs < 0) {
         // if batching has been disabled, then dispatch the requests immediately
         this.#dispatchBatch();
-      } else if (this.#nextBatchTimeout === undefined) {
+      } else if (this.#nextBatchTimeout === undefined && this.#nextBatch.size > 0) {
         // ... otherwise set a timeout, which will dispatch batched requests
         // after the defined delay/window
         this.#nextBatchTimeout = window.setTimeout(this.#dispatchBatch, this.#batchWindowMs);
@@ -382,10 +374,13 @@ export class DirectRPCClient {
           const expiredByTimeToLive = cacheEntry.expiration.expiresAt && cacheEntry.expiration.expiresAt < now;
           const expiredByBlockHeight =
             cacheEntry.expiration.whenBlockHeightChanges &&
-            (cacheEntry.inception.blockHeight !== this.#currentBlockHeight?.value ||
-              this.#currentBlockHeight.expiresAt < now);
+            (this.#currentBlockHeight == null ||
+              this.#currentBlockHeight.expiresAt < now ||
+              cacheEntry.inception.blockHeight !== this.#currentBlockHeight?.value);
 
           if (!expiredByTimeToLive && !expiredByBlockHeight) {
+            this.#clientCacheHits.push(req);
+
             return cacheEntry.value;
           } else {
             this.#requestCache.delete(reqHash);
@@ -432,12 +427,19 @@ export class DirectRPCClient {
     }
 
     this.#logger.debug("DirectRPCClient.#predictivePrimer", "requesting primer package for most popular requests");
-    this.#fetch({
+
+    const req = {
       jsonrpc: "2.0",
       id: 1,
       method: "direct_primer",
       params: [normalizeContextFromUrl(window.location.href)],
-    });
+    };
+    const reqHash = await hashRPCRequest(req);
+
+    // push the primer request to the list of pending requests, and then
+    // instantly dispatch waiting requests
+    this.#nextBatch.set(reqHash, req);
+    this.#dispatchBatch();
   }
 
   /**
@@ -449,167 +451,150 @@ export class DirectRPCClient {
     window.clearTimeout(this.#nextBatchTimeout);
     this.#nextBatchTimeout = undefined;
 
-    // hold back subsequent batches while we're waiting for a head from Direct
-    if (this.#isDirectHeadPending) {
-      this.#logger.debug("DirectRPCClient.#dispatchBatch", "waiting for previous request head to be fetched");
-      this.#nextBatchTimeout = -Infinity;
-      return;
+    // grab reference to all pending batches
+    const batchEntries = Array.from(this.#nextBatch.entries());
+    this.#nextBatch.clear();
+
+    // if the current block height is no longer guaranteed to be valid, then
+    // re-fetch primer package
+    //
+    // (this is only a temporary meassure, until we are ready to implement
+    // predictive prefetching for real)
+    if (!this.#currentBlockHeight || this.#currentBlockHeight.expiresAt < new Date()) {
+      if (!batchEntries.some(([, req]) => req.method === "direct_primer")) {
+        const primerReq = {
+          id: 0,
+          method: "direct_primer",
+          params: [normalizeContextFromUrl(window.location.href)],
+        };
+
+        batchEntries.push([await hashRPCRequest(primerReq), primerReq]);
+      }
     }
 
-    try {
-      // grab reference to all pending batches
-      const batchEntries = Array.from(this.#nextBatch.entries());
-      this.#nextBatch.clear();
+    // re-map ids on requests, so that they're equal to the index of the
+    // request in the batch list (this is useful when receiving responses as
+    // it allows us to quickly identify the associated request hash and
+    // resolve the correct inflight promise)
+    const requests = batchEntries.map(([, req], index) => ({
+      ...req,
+      id: index + 1,
+    }));
 
-      // if the current block height is no longer guaranteed to be valid, then
-      // re-fetch primer package
-      //
-      // (this is only a temporary meassure, until we are ready to implement
-      // predictive prefetching for real)
-      if (!this.#currentBlockHeight || this.#currentBlockHeight.expiresAt < new Date()) {
-        if (!batchEntries.some(([, req]) => req.method === "direct_primer")) {
-          const primerReq = {
-            id: 0,
-            method: "direct_primer",
-            params: [normalizeContextFromUrl(window.location.href)],
-          };
+    const requestHashes = batchEntries.map(([reqHash]) => reqHash);
+    const remainingRequestHashes = new Set(requestHashes);
 
-          batchEntries.push([await hashRPCRequest(primerReq), primerReq]);
+    // perform request to upstream, and handle responses by resolving batched
+    // entries
+    const backoffMode = this.#backoffMode["direct.dev"];
+    const [isDirectRequest, iterator] =
+      !backoffMode || backoffMode.endsAt <= Date.now()
+        ? await this.#fetchFromDirect(requests)
+        : [false, this.#fetchFromProviders(requests)];
+
+    let isDirectHeadPending = isDirectRequest;
+
+    for await (const response of iterator) {
+      // if we're waiting for the head of a response, then parse it as such
+      if (isDirectHeadPending) {
+        if (!isDirectRPCHead(response)) {
+          throw new Error("DirectRPCClient: invalid response structure received, expected head");
         }
+
+        isDirectHeadPending = false;
+
+        // for all incoming predictions, instantly register them as being
+        // inflight to prevent duplication on future events
+        for (const predictedReqHash of response.p) {
+          const promise = makeDeferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>();
+
+          // update internal state to reflect the predicted request
+          requestHashes.push(predictedReqHash);
+          remainingRequestHashes.add(predictedReqHash);
+
+          // create inflight cache for the predicted request, to avoid
+          // duplication in subsequent fetches
+          this.#inflightCache.set(predictedReqHash, promise);
+        }
+
+        // update currently known block height
+        this.#currentBlockHeight =
+          response.b && response.e
+            ? {
+                value: response.b,
+                expiresAt: new Date(response.e),
+              }
+            : undefined;
+
+        continue;
       }
 
-      // re-map ids on requests, so that they're equal to the index of the
-      // request in the batch list (this is useful when receiving responses as
-      // it allows us to quickly identify the associated request hash and
-      // resolve the correct inflight promise)
-      const requests = batchEntries.map(([, req], index) => ({
-        ...req,
-        id: index + 1,
-      }));
-
-      const requestHashes = batchEntries.map(([reqHash]) => reqHash);
-      const promises = requestHashes.map((reqHash) => this.#inflightCache.get(reqHash));
-      const remainingPromises = new Set(promises);
-
-      // perform request to upstream, and handle responses by resolving batched
-      // entries
-      const backoffMode = this.#backoffMode["direct.dev"];
-      const iterator =
-        !backoffMode || backoffMode.endsAt <= Date.now()
-          ? this.#fetchFromDirect(requests)
-          : this.#fetchFromProviders(requests);
-
-      for await (const response of iterator) {
-        // if we're waiting for the head of a response, then parse it as such
-        if (this.#isDirectHeadPending) {
-          if (!isDirectRPCHead(response)) {
-            throw new Error("DirectRPCClient: invalid response structure received, expected head");
-          }
-
-          this.#isDirectHeadPending = false;
-
-          if (this.#nextBatchTimeout === -Infinity) {
-            // if the next batch should already have been dispatched, then do so
-            // right away
-            this.#logger.debug("DirectRPCClient.#dispatchBatch", "head received, dispatching next batch immediately");
-            this.#dispatchBatch();
-          }
-
-          // for all incoming predictions, instantly register them as being
-          // inflight to prevent duplication on future events
-          for (const predictedReqHash of response.p) {
-            const promise = makeDeferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>();
-
-            // update internal state to reflect the predicted request
-            requestHashes.push(predictedReqHash);
-            promises.push(promise);
-            remainingPromises.add(promise);
-
-            // create inflight cache for the predicted request, to avoid
-            // duplication in subsequent fetches
-            this.#inflightCache.set(predictedReqHash, promise);
-          }
-
-          // update currently known block height
-          this.#currentBlockHeight =
-            response.b && response.e
-              ? {
-                  value: response.b,
-                  expiresAt: new Date(response.e),
-                }
-              : undefined;
-
-          continue;
-        }
-
-        // ... otherwise parse the response, resolve external promises and apply
-        // to cache if relevant
-        if (!isRpcSuccessResponse(response) && !isRpcErrorResponse(response)) {
-          throw new Error("DirectRPCClient.#dispatchBatch: received invalid response structure");
-        }
-
-        const reqHash = requestHashes[+response.id - 1];
-        const promise = promises[+response.id - 1];
-
-        if (!reqHash) {
-          this.#logger.error(
-            "DirectRPCClient.#dispatchBatch",
-            `could not map response ID '${response.id}' to request hash, unable to resolve response`,
-          );
-          continue;
-        }
-
-        promise?.__resolve(response);
-        remainingPromises.delete(promise);
-        this.#inflightCache.delete(reqHash);
-
-        if (reqHash && ("b" in response || "e" in response) && this.#currentBlockHeight) {
-          this.#requestCache.set(reqHash, {
-            value: response,
-            expiration: {
-              whenBlockHeightChanges: response.b ?? false,
-              expiresAt: response.e ? new Date(response.e) : undefined,
-            },
-            inception: {
-              blockHeight: this.#currentBlockHeight.value,
-            },
-          });
-        }
+      // ... otherwise parse the response, resolve external promises and apply
+      // to cache if relevant
+      if (!isRpcSuccessResponse(response) && !isRpcErrorResponse(response)) {
+        throw new Error("DirectRPCClient.#dispatchBatch: received invalid response structure");
       }
 
-      // after having received all responses, iterate through any missing
-      // promises and ensure that they are provided with a response
-      for (const promise of remainingPromises) {
-        promise?.__resolve({
-          id: -1,
-          error: {
-            code: 85000,
-            message: "no response received for request (Direct.dev)",
+      const reqHash = requestHashes[+response.id - 1];
+
+      if (!reqHash) {
+        this.#logger.error(
+          "DirectRPCClient.#dispatchBatch",
+          `could not map response ID '${response.id}' to request hash, unable to resolve response`,
+        );
+        continue;
+      }
+
+      remainingRequestHashes.delete(reqHash);
+      this.#inflightCache.get(reqHash)?.__resolve(response);
+      this.#inflightCache.delete(reqHash);
+
+      if (reqHash && ("b" in response || "e" in response) && this.#currentBlockHeight) {
+        this.#requestCache.set(reqHash, {
+          value: response,
+          expiration: {
+            whenBlockHeightChanges: response.b ?? false,
+            expiresAt: response.e ? new Date(response.e) : undefined,
+          },
+          inception: {
+            blockHeight: this.#currentBlockHeight.value,
           },
         });
       }
-    } finally {
-      // in case of errors, allow continued operations for subsequent batches
-      this.#isDirectHeadPending = false;
+    }
 
-      if (this.#nextBatchTimeout === -Infinity) {
-        // if the next batch should already have been dispatched, then do so
-        // right away
-        this.#logger.debug("DirectRPCClient.#dispatchBatch", "unexpected error, dispatching next batch immediately");
-        this.#dispatchBatch();
-      }
+    // after having received all responses, iterate through any missing
+    // promises and ensure that they are provided with a response
+    for (const reqHash of remainingRequestHashes) {
+      this.#inflightCache.get(reqHash)?.__resolve({
+        id: -1,
+        error: {
+          code: 85000,
+          message: "no response received for request (Direct.dev)",
+        },
+      });
     }
   };
 
   /**
    * perform RPC requests against the Direct.dev infrastructure layer
    */
-  async *#fetchFromDirect(requests: DirectRPCRequest[]): AsyncGenerator<unknown> {
-    this.#isDirectHeadPending = true;
-
+  async #fetchFromDirect(
+    requests: DirectRPCRequest[],
+  ): Promise<[isDirectHeadPending: boolean, AsyncGenerator<unknown>]> {
     // submit request to the Direct.dev layer for further processing
     const cacheHits = this.#clientCacheHits.splice(0);
     const inflightHits = this.#clientInflightHits.splice(0);
+
+    if (cacheHits.length === 0 && inflightHits.length === 0 && requests.length === 0) {
+      return [
+        false,
+        makeAsyncGeneratorFromEmitter(async () => {
+          /* noop, there are zero responses */
+        }),
+      ];
+    }
+
     const req = await fetch(this.#directUrl, {
       method: "POST",
       body: JSON.stringify({
@@ -617,7 +602,12 @@ export class DirectRPCClient {
         c: cacheHits,
         i: inflightHits,
       }),
-    });
+    }).catch(
+      () =>
+        new Response(null, {
+          status: 500,
+        }),
+    );
 
     // something went wrong in the Direct.dev layer, restore state and perform
     // fail-over
@@ -664,8 +654,7 @@ export class DirectRPCClient {
       // retry the same requests in failover-mode to guarantee
       this.#logger.debug("DirectRPCClient.#fetchFromDirect", "retrying failed requests from providers", requests);
 
-      this.#isDirectHeadPending = false;
-      return this.#fetchFromProviders(requests);
+      return [false, this.#fetchFromProviders(requests)];
     }
 
     // if we get here, things went OK, reset any previous backoff data and
@@ -676,9 +665,7 @@ export class DirectRPCClient {
     // response for every line returned by the Direct.dev infrastructure
     const iterator = makeGeneratorFromNDJsonResponse(req.body);
 
-    for await (const item of iterator) {
-      yield item;
-    }
+    return [true, iterator];
   }
 
   /**
@@ -817,10 +804,6 @@ export class DirectRPCClient {
    * RPC Agent, so that we ensure correctness of popularity scoring.
    */
   #sendBeacon = () => {
-    if (this.#clientCacheHits.length === 0) {
-      return;
-    }
-
     navigator.sendBeacon(
       this.#directUrl,
       JSON.stringify({

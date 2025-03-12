@@ -5,7 +5,7 @@
 export type DirectRPCRequest = {
   id: string | number;
   method: string;
-  params: readonly unknown[];
+  params?: unknown;
 };
 
 /**

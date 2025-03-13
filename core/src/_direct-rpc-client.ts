@@ -332,9 +332,11 @@ export class DirectRPCClient {
     //
     try {
       if (!Array.isArray(req)) {
-        return this.#fetch(req);
+        const reqHash = await hashRPCRequest(req);
+        return this.#fetch(reqHash, req);
       } else {
-        return Promise.all(req.map((it) => this.#fetch(it)));
+        const reqs = await Promise.all(req.map(async (it) => [await hashRPCRequest(it), it] as const));
+        return Promise.all(reqs.map(([reqHash, req]) => this.#fetch(reqHash, req)));
       }
     } finally {
       if (this.#batchWindowMs < 0) {
@@ -353,7 +355,7 @@ export class DirectRPCClient {
    * or by adding it to the next batch of requests that will be dispatched
    * shortly.
    */
-  async #fetch(req: FetchInput): Promise<FetchOutput> {
+  async #fetch(reqHash: RPCRequestHash, req: FetchInput): Promise<FetchOutput> {
     if (!isRpcRequest(req)) {
       throw new Error("DirectRPCClient.#fetch(): invalid input provided, must conform to jsonrpc spec.");
     }
@@ -364,7 +366,6 @@ export class DirectRPCClient {
 
     return (
       (async () => {
-        const reqHash = await hashRPCRequest(req);
         const cacheEntry = this.#requestCache.get(reqHash);
 
         // if the request has been previously cached, determine if it is still

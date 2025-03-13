@@ -31,7 +31,7 @@ export function isRpcRequest(input: unknown): input is DirectRPCRequest & { json
     return false;
   }
 
-  if (!Array.isArray(input["params"])) {
+  if (typeof input["params"] !== "undefined" && !Array.isArray(input["params"])) {
     return false;
   }
 

@@ -314,7 +314,7 @@ export class DirectRPCClient {
     // directly to the upstream provider
     //
     if (!Array.isArray(req) && !isSupportedRequest(req)) {
-      for await (const response of this.#fetchFromProviders([req], deriveProviderFromRequest(req))) {
+      for await (const response of this.#fetchFromProviders([req])) {
         if (!isRpcSuccessResponse(response) && !isRpcErrorResponse(response)) {
           throw new Error("DirectRPCClient.fetch: received invalid response structure");
         }
@@ -674,13 +674,48 @@ export class DirectRPCClient {
    * fail-over mechanism to perform requests directly against the designated
    * provider nodes
    */
-  #fetchFromProviders(requests: DirectRPCRequest[], providerId?: SupportedProviderId): AsyncGenerator<unknown> {
-    const chunks = chunkArray(requests, BATCH_MAX_SIZE);
+  #fetchFromProviders(requests: DirectRPCRequest[]): AsyncGenerator<unknown> {
+    //
+    // STEP: split requests into batches, which can be performed against
+    // specific providers
+    //
+    const providerBatches = requests.reduce(
+      (acc, req) => {
+        const providerId = deriveProviderFromRequest(req) ?? "";
+
+        if (providerId === "direct.dev") {
+          // requests for the Direct.dev infrastructure is currently
+          // unavailable, silently ignore
+          this.#logger.debug(
+            "DirectRPCClient.#fetchFromProviders",
+            "unable to perform Direct.dev proprietary request, currently in failover mode",
+            req,
+          );
+          return acc;
+        }
+
+        acc[providerId] ??= [];
+        acc[providerId].push(req);
+
+        return acc;
+      },
+      {} as Record<SupportedProviderId | "", DirectRPCRequest[]>,
+    );
+
+    //
+    // STEP: chunk batches, so we never emit too many requests in a single batch
+    //
+    const chunks = Object.entries(providerBatches).flatMap(([providerId, requests]) => {
+      return chunkArray(requests, BATCH_MAX_SIZE).map((chunk) => ({
+        requests: chunk,
+        providerId: (providerId || undefined) as SupportedProviderId | undefined,
+      }));
+    });
 
     return makeAsyncGeneratorFromEmitter(async (emit) => {
       await Promise.allSettled(
-        chunks.map(async (chunk) => {
-          const res = await this.#fetchChunkFromProviders(chunk, providerId);
+        chunks.map(async ({ requests, providerId }) => {
+          const res = await this.#fetchChunkFromProviders(requests, providerId);
 
           for (const item of res) {
             emit(item);

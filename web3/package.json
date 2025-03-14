@@ -2,6 +2,9 @@
   "name": "@direct.dev/web3",
   "private": true,
   "version": "0.0.0",
+  "repository": "direct-dev-project/direct-dev-client",
+  "bugs": "https://github.com/direct-dev-project/direct-dev-client/issues",
+  "license": "MIT",
   "type": "module",
   "files": [
     "src/**/*",

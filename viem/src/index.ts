@@ -5,11 +5,11 @@ import { DirectRPCClient, type DirectRPCClientConfig } from "@direct.dev/client"
 import type { DirectRPCRequest } from "@direct.dev/shared";
 
 /**
- * Create a Direct Viem provider, which wraps the DirectRPCClient and routes
+ * Create a Direct Viem client, which wraps the DirectRPCClient and routes
  * requests through the Direct.dev infrastructure, adding read layer caching
  * for performance and cost reduction.
  */
-export function createDirectViemProvider(config: DirectRPCClientConfig, chain?: Chain): PublicClient {
+export function createDirectViemClient(config: DirectRPCClientConfig, chain?: Chain): PublicClient {
   const directClient = new DirectRPCClient(config);
 
   return createPublicClient({

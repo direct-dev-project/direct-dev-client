@@ -8,7 +8,11 @@ import type { DirectRPCRequest } from "../typings.rpc.js";
  *
  * @todo (Kasper, 04-02-2025): implement recognition of specific provider methods
  */
-export function deriveProviderFromRequest(request: DirectRPCRequest): SupportedProviderId | undefined {
+export function deriveProviderFromRequest(request: DirectRPCRequest): SupportedProviderId | "direct.dev" | undefined {
+  if (request.method.startsWith("direct_")) {
+    return "direct.dev";
+  }
+
   switch (request.method) {
     default:
       return undefined;

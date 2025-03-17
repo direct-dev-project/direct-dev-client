@@ -1,4 +1,4 @@
-# @direct.dev/viewm
+# @direct.dev/viem
 
 [![npm version](https://img.shields.io/npm/v/@direct.dev/web3.svg)](https://www.npmjs.com/package/@direct.dev/web3)
 [![License](https://img.shields.io/github/license/direct-dev-project/direct-dev-client.svg)](LICENSE)

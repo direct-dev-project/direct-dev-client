@@ -6,7 +6,7 @@
  * params and a consistent hash fragment
  */
 export function normalizeContextFromUrl(input: string): string {
-  const url = new URL(input);
+  const url = new URL(input, "http://localhost");
 
   // normalize searchParams
   const searchParams = Array.from(url.searchParams.entries())

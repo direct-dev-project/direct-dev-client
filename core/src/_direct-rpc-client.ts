@@ -50,7 +50,7 @@ export type DirectRPCClientConfig = {
    * Override the baseUrl used when connecting to Direct infrastructure, useful
    * especially when running a local testing environment.
    *
-   * @default "https://rpc.direct.dev/v1"
+   * @default "https://rpc.direct.dev"
    */
   baseUrl?: string;
 
@@ -70,7 +70,7 @@ export type DirectRPCClientConfig = {
    * @note Providing a negative value will bypass batching altogether and submit
    *       requests instantly.
    *
-   * @default 50
+   * @default 25
    */
   batchWindowMs?: number;
 
@@ -225,7 +225,7 @@ export class DirectRPCClient {
    * reference to the timeout which will trigger the next batch to be submitted
    * to the
    */
-  #nextBatchTimeout: number | undefined;
+  #nextBatchTimeout: NodeJS.Timeout | number | undefined;
 
   /**
    * internally collects requests returned from local cache, so they can be
@@ -251,7 +251,7 @@ export class DirectRPCClient {
     this.#directUrl = `${config.baseUrl ?? "https://rpc.direct.dev"}/v1/${encodeURIComponent(config.projectId)}/${encodeURIComponent(config.networkId)}`;
     this.#devMode =
       !!config.devMode && (typeof location === "undefined" || !location.search.includes("directdev=true"));
-    this.#batchWindowMs = config.batchWindowMs ?? 50;
+    this.#batchWindowMs = config.batchWindowMs ?? 25;
 
     // re-map configuration format for providers to internal representation
     this.#providerNodes = config.providers.map((it) =>
@@ -282,8 +282,13 @@ export class DirectRPCClient {
     this.#predictivePrimer();
 
     // subscribe a global listener to handle lifecycle events
-    document.addEventListener("visibilitychange", this.#handleVisibilityChange);
-    window.addEventListener("pagehide", this.#sendBeacon);
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", this.#handleVisibilityChange);
+    }
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("pagehide", this.#sendBeacon);
+    }
   }
 
   /**
@@ -343,9 +348,14 @@ export class DirectRPCClient {
         // if batching has been disabled, then dispatch the requests immediately
         this.#dispatchBatch();
       } else if (this.#nextBatchTimeout === undefined && this.#nextBatch.size > 0) {
-        // ... otherwise set a timeout, which will dispatch batched requests
-        // after the defined delay/window
-        this.#nextBatchTimeout = window.setTimeout(this.#dispatchBatch, this.#batchWindowMs);
+        // ... otherwise, if a throttled batch is not currently pending, then
+        // dispatch the current request immediately and set a timeout for
+        // subsequent requests
+        this.#dispatchBatch();
+        this.#nextBatchTimeout = setTimeout(() => {
+          this.#dispatchBatch();
+          this.#nextBatchTimeout = undefined;
+        }, this.#batchWindowMs);
       }
     }
   }
@@ -434,7 +444,7 @@ export class DirectRPCClient {
       jsonrpc: "2.0",
       id: 1,
       method: "direct_primer",
-      params: [normalizeContextFromUrl(window.location.href)],
+      params: [normalizeContextFromUrl(typeof window !== "undefined" ? window.location.href : "/")],
     };
     const reqHash = await hashRPCRequest(req);
 
@@ -449,10 +459,6 @@ export class DirectRPCClient {
    * promises as soon as possible
    */
   #dispatchBatch = async () => {
-    // stop any pending timers to dispatch a new request
-    window.clearTimeout(this.#nextBatchTimeout);
-    this.#nextBatchTimeout = undefined;
-
     // grab reference to all pending batches
     const batchEntries = Array.from(this.#nextBatch.entries());
     this.#nextBatch.clear();
@@ -467,7 +473,7 @@ export class DirectRPCClient {
         const primerReq = {
           id: 0,
           method: "direct_primer",
-          params: [normalizeContextFromUrl(window.location.href)],
+          params: [normalizeContextFromUrl(typeof window !== "undefined" ? window.location.href : "/")],
         };
 
         batchEntries.push([await hashRPCRequest(primerReq), primerReq]);
@@ -508,7 +514,9 @@ export class DirectRPCClient {
         // for all incoming predictions, instantly register them as being
         // inflight to prevent duplication on future events
         for (const predictedReqHash of response.p) {
-          const promise = makeDeferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>();
+          const promise =
+            this.#inflightCache.get(predictedReqHash) ??
+            makeDeferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>();
 
           // update internal state to reflect the predicted request
           requestHashes.push(predictedReqHash);
@@ -862,6 +870,7 @@ export class DirectRPCClient {
     this.#sendBeacon();
 
     // prevent any future batches from being triggered
-    window.clearTimeout(this.#nextBatchTimeout);
+    clearTimeout(this.#nextBatchTimeout);
+    this.#nextBatchTimeout = undefined;
   }
 }

@@ -404,10 +404,10 @@ export class DirectRPCClient {
         const inflightPromise = this.#inflightCache.get(reqHash);
 
         if (inflightPromise) {
-          const startedAt = Date.now();
+          const startedAt = performance.now();
 
           inflightPromise.then(() => {
-            this.#clientInflightHits.push([req, Date.now() - startedAt]);
+            this.#clientInflightHits.push([req, performance.now() - startedAt]);
           });
 
           return inflightPromise;
@@ -419,6 +419,11 @@ export class DirectRPCClient {
 
         this.#inflightCache.set(reqHash, promise);
         this.#nextBatch.set(reqHash, req);
+
+        promise.then(() => {
+          this.#inflightCache.delete(reqHash);
+          this.#nextBatch.delete(reqHash);
+        });
 
         return promise;
       })()
@@ -514,17 +519,22 @@ export class DirectRPCClient {
         // for all incoming predictions, instantly register them as being
         // inflight to prevent duplication on future events
         for (const predictedReqHash of response.p) {
-          const promise =
-            this.#inflightCache.get(predictedReqHash) ??
-            makeDeferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>();
+          if (!this.#inflightCache.has(predictedReqHash)) {
+            const promise = makeDeferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>();
+
+            promise.then(() => {
+              this.#inflightCache.delete(predictedReqHash);
+              this.#nextBatch.delete(predictedReqHash);
+            });
+
+            // create inflight cache for the predicted request, to avoid
+            // duplication in subsequent fetches
+            this.#inflightCache.set(predictedReqHash, promise);
+          }
 
           // update internal state to reflect the predicted request
           requestHashes.push(predictedReqHash);
           remainingRequestHashes.add(predictedReqHash);
-
-          // create inflight cache for the predicted request, to avoid
-          // duplication in subsequent fetches
-          this.#inflightCache.set(predictedReqHash, promise);
         }
 
         // update currently known block height
@@ -557,7 +567,6 @@ export class DirectRPCClient {
 
       remainingRequestHashes.delete(reqHash);
       this.#inflightCache.get(reqHash)?.__resolve(response);
-      this.#inflightCache.delete(reqHash);
 
       if (reqHash && ("b" in response || "e" in response) && this.#currentBlockHeight) {
         this.#requestCache.set(reqHash, {

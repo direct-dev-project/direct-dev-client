@@ -1,4 +1,5 @@
 export type Deferred<T> = Promise<T> & {
+  __isFulfilled(): boolean;
   __resolve(value: T): void;
   __reject(reason: unknown): void;
 };
@@ -14,11 +15,13 @@ export type Deferred<T> = Promise<T> & {
 export function makeDeferred<T>(): Deferred<T> {
   let __resolve: (value: T) => void;
   let __reject: (reason: unknown) => void;
+  let __isFulfilled = false;
 
   const promise = new Promise<T>((resolve, reject) => {
     __resolve = (value) => {
       resolve(value);
 
+      __isFulfilled = true;
       __resolve = () => {
         throw new Error("makeDeferred(): cannot resolve a promise that is already resolved");
       };
@@ -29,6 +32,7 @@ export function makeDeferred<T>(): Deferred<T> {
     __reject = (reason: unknown) => {
       reject(reason);
 
+      __isFulfilled = true;
       __resolve = () => {
         throw new Error("makeDeferred(): cannot resolve a promise that is already rejected");
       };
@@ -38,8 +42,11 @@ export function makeDeferred<T>(): Deferred<T> {
     };
   });
 
-  return Object.assign(promise, {
+  const deferred = Object.assign(promise, {
+    __isFulfilled: () => __isFulfilled,
     __resolve: (value: T) => __resolve(value),
     __reject: (reason: unknown) => __reject(reason),
   });
+
+  return deferred;
 }

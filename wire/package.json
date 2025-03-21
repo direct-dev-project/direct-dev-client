@@ -1,0 +1,38 @@
+{
+  "name": "@direct.dev/wire",
+  "private": true,
+  "version": "0.0.0",
+  "repository": "direct-dev-project/direct-dev-client",
+  "bugs": "https://github.com/direct-dev-project/direct-dev-client/issues",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "src/**/*",
+    "lib/**/*"
+  ],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
+  },
+  "scripts": {
+    "eslint": "eslint --cache --no-error-on-unmatched-pattern --max-warnings 5 'src/**/*.{js,jsx,ts,tsx,mjs}'",
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "dev:typescript": "tsc --watch --preserveWatchOutput",
+    "dev:rollup": "rollup -c rollup.config.js --watch",
+    "build": "rollup -c rollup.config.js",
+    "build:typescript": "tsc -p tsconfig.json",
+    "release:client": "npm publish"
+  },
+  "dependencies": {
+    "@direct.dev/shared": "0.0.0"
+  },
+  "devDependencies": {
+    "@direct.dev/tooling-eslint-config": "*",
+    "@direct.dev/tooling-rollup-config": "*",
+    "@direct.dev/tooling-typescript-config": "*",
+    "@direct.dev/tooling-vitest-config": "*"
+  }
+}

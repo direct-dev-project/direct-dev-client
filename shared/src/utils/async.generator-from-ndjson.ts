@@ -6,7 +6,7 @@ import { isRecord } from "../guards.js";
  */
 export async function* makeGeneratorWithReturnFromNDJsonResponse<TYield, TReturn>(
   stream: ReadableStream<Uint8Array>,
-): AsyncGenerator<TYield, TReturn> {
+): AsyncGenerator<TYield, TReturn | null> {
   const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
 
@@ -50,7 +50,7 @@ export async function* makeGeneratorWithReturnFromNDJsonResponse<TYield, TReturn
     }
   }
 
-  return {} as TReturn;
+  return null;
 }
 
 /**

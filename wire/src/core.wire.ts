@@ -1,3 +1,4 @@
+import { pack, unpack } from "./core.pack.js";
 import { sha256 } from "./hashing.sha256.js";
 import { sortObject } from "./hashing.sort-object.js";
 
@@ -20,10 +21,11 @@ type PackerId = string;
  *       writing unit tests for Wire implementations to help verify
  *       implementations.
  */
-type WirePacker<T> = {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type WirePacker<T, TExtraEncodeArgs extends any[]> = {
   id: PackerId;
-  encode: (input: T) => string;
-  decode: (input: string, cursor: number) => unknown;
+  encode: (input: T, extraArgs: TExtraEncodeArgs) => string;
+  decode: (input: string, cursor: number) => [T, number];
 };
 
 /**
@@ -31,19 +33,21 @@ type WirePacker<T> = {
  * allow custom made, optimized encoder/decoder pairs for specific use cases
  * (e.g. one instance for requests and another for responses).
  */
-type WirePackerCollection<T> = Record<string, WirePacker<T>>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type WirePackerCollection<T, TExtraEncodeArgs extends any[]> = Record<string, WirePacker<T, TExtraEncodeArgs>>;
 
 /**
  * Wire instances allows combining a collection of packers that are optimized
  * for specific use cases (e.g. ETH requests or responses) with tailor made
  * encoder/decoder pairs for relevant data structures.
  */
-export class Wire<T> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export class Wire<T, TExtraEncodeArgs extends any[] = []> {
   /**
    * the collection of packers available within this instance, allowing
    * blazingly fast encoding/decoding of these content structures
    */
-  #packers: WirePackerCollection<T>;
+  #packers: WirePackerCollection<T, TExtraEncodeArgs>;
 
   /**
    * the length of structure IDs, used to quickly infer type of well-known
@@ -68,13 +72,34 @@ export class Wire<T> {
   /**
    * initialize the instance by creating optimized lookups for decode/encoders
    */
-  constructor(packers: WirePackerCollection<NoInfer<T>>, mapper: (input: NoInfer<T>) => string | undefined) {
-    this.#packers = packers;
-    this.#encodeMapper = mapper;
+  constructor(packer: Omit<WirePacker<NoInfer<T>, NoInfer<TExtraEncodeArgs>>, "id">);
+  constructor(
+    packers: WirePackerCollection<NoInfer<T>, NoInfer<TExtraEncodeArgs>>,
+    mapper: (input: NoInfer<T>) => string | undefined,
+  );
+  constructor(
+    packers:
+      | Omit<WirePacker<NoInfer<T>, NoInfer<TExtraEncodeArgs>>, "id">
+      | WirePackerCollection<NoInfer<T>, NoInfer<TExtraEncodeArgs>>,
+    mapper?: (input: NoInfer<T>) => string | undefined,
+  ) {
+    if (mapper === undefined) {
+      this.#packers = {
+        packer: {
+          id: "",
+          ...(packers as Omit<WirePacker<T, TExtraEncodeArgs>, "id">),
+        },
+      };
+
+      this.#encodeMapper = () => "packer";
+    } else {
+      this.#packers = packers as WirePackerCollection<T, TExtraEncodeArgs>;
+      this.#encodeMapper = mapper;
+    }
 
     let idLength: number | undefined;
 
-    Object.entries(packers).forEach(([key, { id }]) => {
+    Object.entries(this.#packers).forEach(([key, { id }]) => {
       if (idLength === undefined) {
         idLength = id.length;
       } else if (id.length !== idLength) {
@@ -99,24 +124,28 @@ export class Wire<T> {
    * otherwise falling back to using JSON.stringify for graceful fallback
    * handling of unknown structures.
    */
-  encode(input: T): string {
+  encode(input: T, ...extraArgs: TExtraEncodeArgs): string {
     const packerKey = this.#encodeMapper(input);
     if (packerKey === undefined) return JSON.stringify(input);
 
     const packer = this.#packers[packerKey];
-    return packer ? packer.id + packer.encode(input) : JSON.stringify(input);
+    return packer ? packer.id + packer.encode(input, extraArgs) : pack.str(JSON.stringify(input));
   }
 
   /**
    * utility to perform consistent hashing of input requests, utilizing the
    * blazingly fast Wire encoding protocol to generate the hashing input.
+   *
+   * @param encodedStr - if the input was decoded from an encoded string, then
+   *        it's possible to supply the original encoded string here and reuse
+   *        that for maximum hashing performance
    */
-  hash(input: T): Promise<string> {
+  hash(input: T, encodedStr?: string, ...extraArgs: TExtraEncodeArgs): Promise<string> {
     const packerKey = this.#encodeMapper(input);
     if (packerKey === undefined) return sha256(sortObject(input));
 
     const packer = this.#packers[packerKey];
-    return sha256(packer ? packer.id + packer.encode(input) : sortObject(input));
+    return sha256(packer ? (encodedStr ?? packer.id + packer.encode(input, extraArgs)) : sortObject(input));
   }
 
   /**
@@ -124,16 +153,22 @@ export class Wire<T> {
    * otherwise falling back to using JSON.parse for graceful fallback handling
    * of unknown structures.
    */
-  decode(input: string): T {
-    const idLen = this.#idLength;
-    const packerId = input.substring(0, idLen) as PackerId;
+  decode(input: string, cursor = 0): [T, number] {
+    const idEnd = cursor + this.#idLength;
+    const packerId = input.slice(cursor, idEnd) as PackerId;
     const packerKey = this.#decodeMap.get(packerId);
 
-    if (!packerKey) return JSON.parse(input);
+    if (!packerKey) {
+      const str = unpack.str(input, cursor);
+      return [JSON.parse(str[0]), str[1]];
+    }
 
     const packer = this.#packers[packerKey];
-    if (!packer) return JSON.parse(input);
+    if (!packer) {
+      const str = unpack.str(input, cursor);
+      return [JSON.parse(str[0]), str[1]];
+    }
 
-    return packer.decode(input, idLen) as T;
+    return packer.decode(input, idEnd);
   }
 }

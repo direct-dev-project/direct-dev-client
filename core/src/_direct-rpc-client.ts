@@ -12,14 +12,15 @@ import {
   chunkArray,
   deriveProviderFromNodeUrl,
   deriveProviderFromRequest,
-  hashRPCRequest,
   makeAsyncGeneratorFromEmitter,
   makeDeferred,
-  makeGeneratorFromNDJsonResponse,
   weightedPick,
 } from "@direct.dev/shared";
+import { wire, WireDecodeStream, WireEncodeStream } from "@direct.dev/wire";
 
+import type { BatchConfig, DirectRPCBatch } from "./batch.core.js";
 import { isDirectRPCHead, isRpcErrorResponse, isRpcRequest, isRpcSuccessResponse } from "./guards.js";
+import { createBatch } from "./util.create-batch.js";
 import { isSupportedRequest } from "./util.is-supported-request.js";
 import { normalizeContextFromUrl } from "./util.normalize-url.js";
 
@@ -141,10 +142,10 @@ export class DirectRPCClient {
   #devMode: boolean;
 
   /**
-   * cache of the Direct.dev infrastructure entry worker URL, based on initial
-   * configurations supplied to the client.
+   * cached configurations to apply when creating new batch windows for sending
+   * multiple requests through a single HTTP socket.
    */
-  #directUrl: string;
+  #batchConfig: BatchConfig;
 
   /**
    * configuration of batch window as provided when instantiating the client.
@@ -215,31 +216,33 @@ export class DirectRPCClient {
   #inflightCache = new Map<RPCRequestHash, Deferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>>();
 
   /**
-   * collection of requests to be triggered upon the next batch, indexed by
-   * hash so that we can safely reference the and resolve the correct inflight
-   * promise.
+   * reference to the currently open batch, so that requests can be pushed onto
+   * it until the time of it's submission.
    */
-  #nextBatch = new Map<RPCRequestHash, DirectRPCRequest>();
+  #currBatch: DirectRPCBatch | undefined;
 
   /**
-   * reference to the timeout which will trigger the next batch to be submitted
-   * to the
+   * reference to the timeout which will trigger dispatching of the current
+   * batch, allowing opening of a new one as soon as it becomes possible
    */
-  #nextBatchTimeout: NodeJS.Timeout | number | undefined;
+  #batchTimeout: NodeJS.Timeout | number | undefined;
 
   /**
-   * internally collects requests returned from local cache, so they can be
-   * submitted for popularity sampling in the RPC Agent upon next physical
-   * request.
+   * increments number of requests served from in-memory cache locally.
    */
-  #clientCacheHits: DirectRPCRequest[] = [];
+  #cacheHitCount = 0;
 
   /**
-   * internally collects requests returned from the inflight hit cache and
-   * their response times, so they can be submitted for sampling and analytics
-   * upon the next physical request.
+   * increments number of requests served from inflight uniqueness cache
+   * locally.
    */
-  #clientInflightHits: Array<[DirectRPCRequest, responseTimeMs: number]> = [];
+  #inflightHitCount = 0;
+
+  /**
+   * internally collects samples of requests that have been served from
+   * in-memory cache, so that they can be emitted upon subsequent requests
+   */
+  #clientSamples: DirectRPCRequest[] = [];
 
   /**
    * specifies if this client instance has been destroyed, used to prevent
@@ -248,10 +251,8 @@ export class DirectRPCClient {
   #isDestroyed = false;
 
   constructor(config: DirectRPCClientConfig) {
-    this.#directUrl = `${config.baseUrl ?? "https://rpc.direct.dev"}/v1/${encodeURIComponent(config.projectId)}/${encodeURIComponent(config.networkId)}`;
     this.#devMode =
       !!config.devMode && (typeof location === "undefined" || !location.search.includes("directdev=true"));
-    this.#batchWindowMs = config.batchWindowMs ?? 25;
 
     // re-map configuration format for providers to internal representation
     this.#providerNodes = config.providers.map((it) =>
@@ -277,6 +278,12 @@ export class DirectRPCClient {
       prefix: "Direct.dev:",
       level: config.logLevel ?? "info",
     });
+
+    // prepare configurations for handling batches of requests
+    this.#batchConfig = {
+      endpointUrl: `${config.baseUrl ?? "https://rpc.direct.dev"}/v1/${encodeURIComponent(config.projectId)}/${encodeURIComponent(config.networkId)}`,
+    };
+    this.#batchWindowMs = config.batchWindowMs ?? 25;
 
     // instantly fetch the initial primer package
     this.#predictivePrimer();
@@ -321,14 +328,14 @@ export class DirectRPCClient {
     if (!Array.isArray(req) && !isSupportedRequest(req)) {
       for await (const response of this.#fetchFromProviders([req])) {
         if (!isRpcSuccessResponse(response) && !isRpcErrorResponse(response)) {
-          throw new Error("DirectRPCClient.fetch: received invalid response structure");
+          throw new Error("fetch: received invalid response structure");
         }
 
         return response;
       }
 
       this.#logger.error("fetch", "no response received for request", req);
-      throw new Error("DirectRPCClient.fetch: no response received for request");
+      throw new Error("fetch: no response received for request");
     }
 
     //
@@ -337,24 +344,28 @@ export class DirectRPCClient {
     //
     try {
       if (!Array.isArray(req)) {
-        const reqHash = await hashRPCRequest(req);
+        const reqHash = await wire.hashRPCRequest(req);
         return this.#fetch(reqHash, req);
       } else {
-        const reqs = await Promise.all(req.map(async (it) => [await hashRPCRequest(it), it] as const));
+        const reqs = await Promise.all(req.map(async (it) => [await wire.hashRPCRequest(it), it] as const));
         return Promise.all(reqs.map(([reqHash, req]) => this.#fetch(reqHash, req)));
       }
     } finally {
       if (this.#batchWindowMs < 0) {
         // if batching has been disabled, then dispatch the requests immediately
         this.#dispatchBatch();
-      } else if (this.#nextBatchTimeout === undefined && this.#nextBatch.size > 0) {
+      } else if (
+        this.#batchTimeout === undefined &&
+        this.#currBatch !== undefined &&
+        this.#currBatch.requests.length > 0
+      ) {
         // ... otherwise, if a throttled batch is not currently pending, then
         // dispatch the current request immediately and set a timeout for
         // subsequent requests
         this.#dispatchBatch();
-        this.#nextBatchTimeout = setTimeout(() => {
+        this.#batchTimeout = setTimeout(() => {
           this.#dispatchBatch();
-          this.#nextBatchTimeout = undefined;
+          this.#batchTimeout = undefined;
         }, this.#batchWindowMs);
       }
     }
@@ -367,11 +378,11 @@ export class DirectRPCClient {
    */
   async #fetch(reqHash: RPCRequestHash, req: FetchInput): Promise<FetchOutput> {
     if (!isRpcRequest(req)) {
-      throw new Error("DirectRPCClient.#fetch(): invalid input provided, must conform to jsonrpc spec.");
+      throw new Error("#fetch(): invalid input provided, must conform to jsonrpc spec.");
     }
 
     if (this.#isDestroyed) {
-      throw new Error("DirectRPCClient.#fetch(): called after destroying the client instance.");
+      throw new Error("#fetch(): called after destroying the client instance.");
     }
 
     return (
@@ -391,7 +402,8 @@ export class DirectRPCClient {
               cacheEntry.inception.blockHeight !== this.#currentBlockHeight?.value);
 
           if (!expiredByTimeToLive && !expiredByBlockHeight) {
-            this.#clientCacheHits.push(req);
+            this.#cacheHitCount++;
+            this.#clientSamples.push(req);
 
             return cacheEntry.value;
           } else {
@@ -404,11 +416,8 @@ export class DirectRPCClient {
         const inflightPromise = this.#inflightCache.get(reqHash);
 
         if (inflightPromise) {
-          const startedAt = performance.now();
-
-          inflightPromise.then(() => {
-            this.#clientInflightHits.push([req, performance.now() - startedAt]);
-          });
+          this.#inflightHitCount++;
+          this.#clientSamples.push(req);
 
           return inflightPromise;
         }
@@ -418,11 +427,12 @@ export class DirectRPCClient {
         const promise = makeDeferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>();
 
         this.#inflightCache.set(reqHash, promise);
-        this.#nextBatch.set(reqHash, req);
+
+        this.#currBatch ??= createBatch(this.#batchConfig, this.#logger);
+        this.#currBatch.add(req);
 
         promise.then(() => {
           this.#inflightCache.delete(reqHash);
-          this.#nextBatch.delete(reqHash);
         });
 
         return promise;
@@ -443,7 +453,7 @@ export class DirectRPCClient {
       return;
     }
 
-    this.#logger.debug("DirectRPCClient.#predictivePrimer", "requesting primer package for most popular requests");
+    this.#logger.debug("#predictivePrimer", "requesting primer package for most popular requests");
 
     const req = {
       jsonrpc: "2.0",
@@ -451,11 +461,11 @@ export class DirectRPCClient {
       method: "direct_primer",
       params: [normalizeContextFromUrl(typeof window !== "undefined" ? window.location.href : "/")],
     };
-    const reqHash = await hashRPCRequest(req);
 
     // push the primer request to the list of pending requests, and then
     // instantly dispatch waiting requests
-    this.#nextBatch.set(reqHash, req);
+    this.#currBatch ??= createBatch(this.#batchConfig, this.#logger);
+    this.#currBatch.add(req);
     this.#dispatchBatch();
   }
 
@@ -464,9 +474,13 @@ export class DirectRPCClient {
    * promises as soon as possible
    */
   #dispatchBatch = async () => {
-    // grab reference to all pending batches
-    const batchEntries = Array.from(this.#nextBatch.entries());
-    this.#nextBatch.clear();
+    if (!this.#currBatch) {
+      // bail out if no batch exists
+      return;
+    }
+
+    const currBatch = this.#currBatch;
+    this.#currBatch = undefined;
 
     // if the current block height is no longer guaranteed to be valid, then
     // re-fetch primer package
@@ -474,14 +488,12 @@ export class DirectRPCClient {
     // (this is only a temporary meassure, until we are ready to implement
     // predictive prefetching for real)
     if (!this.#currentBlockHeight || this.#currentBlockHeight.expiresAt < new Date()) {
-      if (!batchEntries.some(([, req]) => req.method === "direct_primer")) {
-        const primerReq = {
+      if (!currBatch.requests.some((req) => req.method === "direct_primer")) {
+        currBatch.add({
           id: 0,
           method: "direct_primer",
           params: [normalizeContextFromUrl(typeof window !== "undefined" ? window.location.href : "/")],
-        };
-
-        batchEntries.push([await hashRPCRequest(primerReq), primerReq]);
+        });
       }
     }
 
@@ -489,12 +501,7 @@ export class DirectRPCClient {
     // request in the batch list (this is useful when receiving responses as
     // it allows us to quickly identify the associated request hash and
     // resolve the correct inflight promise)
-    const requests = batchEntries.map(([, req], index) => ({
-      ...req,
-      id: index + 1,
-    }));
-
-    const requestHashes = batchEntries.map(([reqHash]) => reqHash);
+    const requestHashes = await Promise.all(currBatch.requests.map((it) => wire.hashRPCRequest(it)));
     const remainingRequestHashes = new Set(requestHashes);
 
     // perform request to upstream, and handle responses by resolving batched
@@ -502,12 +509,12 @@ export class DirectRPCClient {
     const backoffMode = this.#backoffMode["direct.dev"];
     const [isDirectRequest, iterator] =
       !backoffMode || backoffMode.endsAt <= Date.now()
-        ? await this.#fetchFromDirect(requests)
-        : [false, this.#fetchFromProviders(requests)];
+        ? await this.#fetchFromDirect(currBatch)
+        : [false, this.#fetchFromProviders(currBatch.requests)];
 
     let isDirectHeadPending = isDirectRequest;
 
-    for await (const response of iterator) {
+    for await (const { value: response } of iterator) {
       // if we're waiting for the head of a response, then parse it as such
       if (isDirectHeadPending) {
         if (!isDirectRPCHead(response)) {
@@ -524,7 +531,6 @@ export class DirectRPCClient {
 
             promise.then(() => {
               this.#inflightCache.delete(predictedReqHash);
-              this.#nextBatch.delete(predictedReqHash);
             });
 
             // create inflight cache for the predicted request, to avoid
@@ -552,14 +558,14 @@ export class DirectRPCClient {
       // ... otherwise parse the response, resolve external promises and apply
       // to cache if relevant
       if (!isRpcSuccessResponse(response) && !isRpcErrorResponse(response)) {
-        throw new Error("DirectRPCClient.#dispatchBatch: received invalid response structure");
+        throw new Error("#dispatchBatch: received invalid response structure");
       }
 
       const reqHash = requestHashes[+response.id - 1];
 
       if (!reqHash) {
         this.#logger.error(
-          "DirectRPCClient.#dispatchBatch",
+          "#dispatchBatch",
           `could not map response ID '${response.id}' to request hash, unable to resolve response`,
         );
         continue;
@@ -599,99 +605,65 @@ export class DirectRPCClient {
    * perform RPC requests against the Direct.dev infrastructure layer
    */
   async #fetchFromDirect(
-    requests: DirectRPCRequest[],
-  ): Promise<[isDirectHeadPending: boolean, AsyncGenerator<unknown>]> {
-    // submit request to the Direct.dev layer for further processing
-    const cacheHits = this.#clientCacheHits.splice(0);
-    const inflightHits = this.#clientInflightHits.splice(0);
+    batch: DirectRPCBatch,
+  ): Promise<[isDirectHeadPending: boolean, AsyncGenerator<{ done: boolean; value: unknown }>]> {
+    const cacheHitCount = this.#cacheHitCount;
+    const inflightHitCount = this.#inflightHitCount;
+    const samples = this.#clientSamples;
 
-    if (cacheHits.length === 0 && inflightHits.length === 0 && requests.length === 0) {
-      return [
-        false,
-        makeAsyncGeneratorFromEmitter(async () => {
-          /* noop, there are zero responses */
-        }),
-      ];
+    this.#clientSamples = [];
+
+    // dispatch request including metrics data to the Direct.dev layer for
+    // further processing
+    const response = await batch.dispatch({ cacheHitCount, inflightHitCount, samples });
+
+    if (response) {
+      // if things went OK, then reset any previously known backoff-settings
+      // and continue operations as usual from here
+      this.#backoffMode["direct.dev"] = undefined;
+
+      return [true, response];
     }
 
-    const req = await fetch(this.#directUrl, {
-      method: "POST",
-      body: JSON.stringify({
-        r: requests,
-        c: cacheHits,
-        i: inflightHits,
-      }),
-    }).catch(
-      () =>
-        new Response(null, {
-          status: 500,
-        }),
-    );
+    // if something went wrong in the Direct.dev layer, restore state and
+    // perform fail-over
+    const now = Date.now();
 
-    // something went wrong in the Direct.dev layer, restore state and perform
-    // fail-over
-    if (!req.ok || !req.body) {
-      this.#logger.error(
-        "#fetchFromDirect",
-        "internal server error occurred (%s %s):\n\n%s",
-        req.status,
-        req.statusText,
-        await req.text(),
-      );
+    // restore in-memory copy of local cache hits, as we were unable to
+    // sample them in the backend layer
+    this.#cacheHitCount += cacheHitCount;
+    this.#inflightHitCount += inflightHitCount;
 
-      const now = Date.now();
-
-      // restore in-memory copy of local cache hits, as we were unable to
-      // sample them in the backend layer
-      for (const hit of cacheHits) {
-        this.#clientCacheHits.push(hit);
-      }
-
-      for (const hit of inflightHits) {
-        this.#clientInflightHits.push(hit);
-      }
-
-      // register the error internally, so we can perform exponential backoff
-      // if we're not already in a backoff-period
-      const backoffMode = this.#backoffMode["direct.dev"];
-
-      if (!backoffMode || backoffMode.endsAt < now) {
-        const prevFailureCount = backoffMode?.failureCount ?? 0;
-
-        this.#backoffMode["direct.dev"] = {
-          failureCount: prevFailureCount + 1,
-          endsAt: now + 2 ** Math.min(8, prevFailureCount) * BASE_BACKOFF_DURATION_MS,
-        };
-
-        this.#logger.debug(
-          "DirectRPCClient.#fetchFromDirect",
-          "backing off until",
-          new Date(this.#backoffMode["direct.dev"].endsAt),
-        );
-      }
-
-      // retry the same requests in failover-mode to guarantee
-      this.#logger.debug("DirectRPCClient.#fetchFromDirect", "retrying failed requests from providers", requests);
-
-      return [false, this.#fetchFromProviders(requests)];
+    for (const req of samples) {
+      this.#clientSamples.push(req);
     }
 
-    // if we get here, things went OK, reset any previous backoff data and
-    // continue operations as usual through the Direct.dev infrastructure
-    this.#backoffMode["direct.dev"] = undefined;
+    // register the error internally, so we can perform exponential backoff
+    // if we're not already in a backoff-period
+    const backoffMode = this.#backoffMode["direct.dev"];
 
-    // transform the response body into an AsyncGenerator which emits a
-    // response for every line returned by the Direct.dev infrastructure
-    const iterator = makeGeneratorFromNDJsonResponse(req.body);
+    if (!backoffMode || backoffMode.endsAt < now) {
+      const prevFailureCount = backoffMode?.failureCount ?? 0;
 
-    return [true, iterator];
+      this.#backoffMode["direct.dev"] = {
+        failureCount: prevFailureCount + 1,
+        endsAt: now + 2 ** Math.min(8, prevFailureCount) * BASE_BACKOFF_DURATION_MS,
+      };
+
+      this.#logger.debug("#fetchFromDirect", "backing off until", new Date(this.#backoffMode["direct.dev"].endsAt));
+    }
+
+    // retry the same requests in failover-mode to guarantee
+    this.#logger.debug("#fetchFromDirect", "retrying failed requests from providers", batch.requests);
+
+    return [false, this.#fetchFromProviders(batch.requests)];
   }
 
   /**
    * fail-over mechanism to perform requests directly against the designated
    * provider nodes
    */
-  #fetchFromProviders(requests: DirectRPCRequest[]): AsyncGenerator<unknown> {
+  #fetchFromProviders(requests: DirectRPCRequest[]): AsyncGenerator<{ done: boolean; value: unknown }> {
     //
     // STEP: split requests into batches, which can be performed against
     // specific providers
@@ -704,7 +676,7 @@ export class DirectRPCClient {
           // requests for the Direct.dev infrastructure is currently
           // unavailable, silently ignore
           this.#logger.debug(
-            "DirectRPCClient.#fetchFromProviders",
+            "#fetchFromProviders",
             "unable to perform Direct.dev proprietary request, currently in failover mode",
             req,
           );
@@ -735,7 +707,7 @@ export class DirectRPCClient {
           const res = await this.#fetchChunkFromProviders(requests, providerId);
 
           for (const item of res) {
-            emit(item);
+            emit({ done: false, value: item });
           }
         }),
       );
@@ -787,14 +759,14 @@ export class DirectRPCClient {
       });
 
       if (!req.ok) {
-        throw new Error("DirectRPCClient.#fetchFromProviders: unknown server error occurred");
+        throw new Error("#fetchFromProviders: unknown server error occurred");
       }
 
       // yield responses through the AsyncGenerator interface
       const res = await req.json();
 
       if (!Array.isArray(res)) {
-        throw new Error("DirectRPCClient.#fetchFromProviders: invalid response received, expected array");
+        throw new Error("#fetchFromProviders: invalid response received, expected array");
       }
 
       // if we get here, things went OK, reset any previous backoff data and
@@ -857,15 +829,33 @@ export class DirectRPCClient {
    * submit local cache hits that have not yet been sampled by the Direct.dev
    * RPC Agent, so that we ensure correctness of popularity scoring.
    */
-  #sendBeacon = () => {
-    navigator.sendBeacon(
-      this.#directUrl,
-      JSON.stringify({
-        r: [],
-        c: this.#clientCacheHits.splice(0),
-        i: this.#clientInflightHits.splice(0),
+  #sendBeacon = async () => {
+    const cacheHitCount = this.#cacheHitCount;
+    const inflightHitCount = this.#inflightHitCount;
+    const samples = this.#clientSamples;
+
+    if (cacheHitCount === 0 && inflightHitCount === 0 && samples.length === 0) {
+      // avoid dispatching anything if there are no metrics to deliver to the
+      // upstream
+      return;
+    }
+
+    // encode the metrics using a wire stream
+    const encodeStream = new WireEncodeStream();
+
+    encodeStream.close(
+      wire.clientMetrics.encode({
+        cacheHitCount,
+        inflightHitCount,
+        samples,
       }),
     );
+
+    navigator.sendBeacon(this.#batchConfig.endpointUrl, await new WireDecodeStream(encodeStream).toString());
+
+    // reset in-memory samples and hope that the beacon goes through for proper
+    // collection of metrics
+    this.#clientSamples = [];
   };
 
   /**
@@ -879,7 +869,7 @@ export class DirectRPCClient {
     this.#sendBeacon();
 
     // prevent any future batches from being triggered
-    clearTimeout(this.#nextBatchTimeout);
-    this.#nextBatchTimeout = undefined;
+    clearTimeout(this.#batchTimeout);
+    this.#batchTimeout = undefined;
   }
 }

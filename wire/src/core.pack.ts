@@ -61,6 +61,16 @@ export const pack = {
 
     return typeChars.boolean + (input ? "1" : "0");
   },
+
+  arr<T>(input: T[], pack: (item: T) => string): string {
+    let result = input.length + ":";
+
+    for (const str of input) {
+      result += pack(str);
+    }
+
+    return result;
+  },
 };
 
 /**
@@ -134,5 +144,29 @@ export const unpack = {
     }
 
     return [input.charCodeAt(cursor) - 48 === 1, cursor + 1];
+  },
+
+  arr<T>(input: string, cursor: number, unpack: (cursor: number) => [T, number]): [T[], number] {
+    // low-level optimized method to extract the length of the array,
+    // incrementing the cursor as long as we're encountering numeric characters
+    // (0-9)
+    let len = 0;
+    while (input.charCodeAt(cursor) >= 48 && input.charCodeAt(cursor) <= 57) {
+      len = len * 10 + (input.charCodeAt(cursor) - 48);
+      cursor++;
+    }
+
+    // prepare result array with predefined length for maximum performance
+    const result: T[] = new Array(len);
+
+    // iterate over the array and extract each value
+    cursor++;
+    for (let i = 0; i < len; i++) {
+      const value = unpack(cursor);
+      result[i] = value[0];
+      cursor = value[1];
+    }
+
+    return [result, cursor];
   },
 };

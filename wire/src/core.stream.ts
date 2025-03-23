@@ -1,76 +1,86 @@
+import { makeDeferred } from "@direct.dev/shared";
+
 import { pack, unpack } from "./core.pack.js";
-import { Wire } from "./core.wire.js";
+
+export type WireStreamEntry<T, TDone = null> =
+  | {
+      done: false;
+      value: T;
+    }
+  | {
+      done: true;
+      value: TDone;
+    };
 
 /**
- * A basic implementation of a ReadableStream which allows streaming a series
- * Wire-encoded entries, useful for dispatching batches of requests and
- * responses as fast as possible.
+ * Basic stream implementation which uses the Wire protocol to perform
+ * blazingly fast writes of sequentiel entries of variable length.
  */
-export class WireEncodeStream<TEntry, TReport = null> {
-  /**
-   * reference to the Wire instances used to encode entries and reportes emitted
-   * on this stream.
-   */
-  #wires: {
-    entry: Wire<TEntry>;
-    report?: Wire<TReport>;
-  };
-
+export class WireEncodeStream extends ReadableStream<Uint8Array> {
   /**
    * cached reference to the ReadableStream controller, which allows us to push
    * entries on-demand further down this stream integration.
    */
-  #readStreamController: ReadableStreamDefaultController | undefined;
+  #controllerRef: {
+    current: ReadableStreamDefaultController | undefined;
+  };
 
   /**
-   * the public readable stream which entries will be emitted upon.
+   * text encoder used to convert input to a fetch-compatible UInt8Array for
+   * convenience
+   *
+   * @note We're using TextEncoder rather than piping through TextEncoderStream
+   *       as it yields faster runtime in Cloudflare Workers.
    */
-  readonly readStream: ReadableStream;
-  #encoder = new TextEncoder();
+  readonly #textEncoder = new TextEncoder();
 
-  constructor(
-    wires:
-      | Wire<TEntry>
-      | {
-          entry: Wire<TEntry>;
-          report: Wire<TReport>;
-        },
-  ) {
-    this.#wires =
-      wires instanceof Wire
-        ? {
-            entry: wires,
-          }
-        : wires;
+  /**
+   * internal promise instance which will be resolved when the stream is
+   * closed, supporting the `wait()` call below.
+   */
+  readonly #deferred = makeDeferred<undefined>();
 
-    // create the readable stream which entries will be emitted to, and perform
-    // automatic text-encoding so it's easily usable in `fetch`
-    this.readStream = new ReadableStream({
+  constructor() {
+    // create a ref-object (inspired by React), so we can apply the controller
+    // when it's provided in the start method below (which is executed prior to
+    // the `super()` call resolving, thus resulting in a ReferenceError
+    // regarding accessing this too early)
+    const controllerRef: { current: ReadableStreamDefaultController | undefined } = {
+      current: undefined,
+    };
+
+    super({
       start: (controller) => {
-        this.#readStreamController = controller;
+        controllerRef.current = controller;
       },
     });
+
+    this.#controllerRef = controllerRef;
   }
 
   /**
    * push the specified input to the stream.
    */
-  push(input: TEntry): void {
-    this.#readStreamController?.enqueue(this.#encoder.encode("0" + pack.str(this.#wires.entry.encode(input))));
+  push(input: string): void {
+    this.#controllerRef.current?.enqueue(this.#textEncoder.encode("0" + pack.str(input)));
   }
 
   /**
    * push the specified report to the stream and close the stream for further
    * handling.
    */
-  close(input: TReport): void {
-    if (this.#wires.report) {
-      this.#readStreamController?.enqueue(this.#encoder.encode("1" + pack.str(this.#wires.report.encode(input))));
-    } else {
-      this.#readStreamController?.enqueue(this.#encoder.encode("2"));
-    }
+  close(input?: string | null): void {
+    this.#controllerRef.current?.enqueue(this.#textEncoder.encode(input != null ? "1" + pack.str(input) : "2"));
+    this.#controllerRef.current?.close();
 
-    this.#readStreamController?.close();
+    this.#deferred.__resolve(undefined);
+  }
+
+  /**
+   * returns a promise that resolves once the stream has been closed.
+   */
+  async wait(): Promise<void> {
+    await this.#deferred;
   }
 }
 
@@ -79,64 +89,38 @@ export class WireEncodeStream<TEntry, TReport = null> {
  * request body stream and expose a reader that transforms the incoming
  * signature into an AsyncGenerator for convenient and fast stream processing.
  */
-export class WireDecodeStream<TEntry, TReport = null> {
-  /**
-   * reference to the Wire instances used to encode entries and reportes emitted
-   * on this stream.
-   */
-  #wires: {
-    entry: Wire<TEntry>;
-    report?: Wire<TReport>;
-  };
-
+export class WireDecodeStream {
   /**
    * the provided readable stream, from which entries will be read and emitted
    * as soon as they become available.
    */
-  readonly #readStream: ReadableStream;
+  readonly #readStream: ReadableStream<Uint8Array>;
 
-  #decoder = new TextDecoder();
+  /**
+   * text decoder used to convert input from a fetch-compatible UInt8Array into
+   * a string representation for processing by the Wire protocol.
+   */
+  #textDecoder = new TextDecoder();
 
-  constructor(
-    wires:
-      | Wire<TEntry>
-      | {
-          entry: Wire<TEntry>;
-          report: Wire<TReport>;
-        },
-    stream: ReadableStream,
-  ) {
+  constructor(stream: ReadableStream<Uint8Array>) {
     this.#readStream = stream;
-    this.#wires =
-      wires instanceof Wire
-        ? {
-            entry: wires,
-          }
-        : wires;
   }
 
-  async *getReader(): AsyncGenerator<
-    | {
-        done: false;
-        value: TEntry;
-      }
-
-    // a bit of TypeScript gymnastics to let callers easily infer the value
-    // type if no special report is delivered at the end of the stream
-    | (TReport extends null
-        ? never
-        : {
-            done: true;
-            value: TReport;
-          })
-  > {
+  /**
+   * transform the stream into an AsyncGenerator that yields entries
+   * sequentially as soon as they become available.
+   */
+  async *getReader<T = string, TDone = string>(
+    transformEntry: (input: string) => Promise<T> | T = (input) => input as T,
+    transformDone: (input: string) => Promise<TDone> | TDone = (input) => input as TDone,
+  ): AsyncGenerator<WireStreamEntry<T, TDone>> {
     const reader = this.#readStream.getReader();
 
     let buffer = "";
     let result: ReadableStreamReadResult<Uint8Array> | undefined;
 
     while (!(result = await reader.read()).done) {
-      buffer += this.#decoder.decode(result.value);
+      buffer += this.#textDecoder.decode(result.value);
 
       while (buffer.length > 0) {
         if (buffer.charCodeAt(0) === 50) {
@@ -166,27 +150,19 @@ export class WireDecodeStream<TEntry, TReport = null> {
             // yield the decoded entry
             yield {
               done: false,
-              value: this.#wires.entry.decode(value[0]),
-            } as const;
+              value: await transformEntry(value[0]),
+            };
 
             // slice the buffer, so that the previously emitted value is no
             // longer retained in-memory
             buffer = buffer.slice(value[1]);
           } else {
-            if (this.#wires.report) {
-              // if we get here, the final response has been received - emit it
-              // in it's entirety
-              yield {
-                done: true,
-                value: this.#wires.report.decode(value[0]),
-              } as TReport extends null
-                ? never
-                : {
-                    done: true;
-                    value: TReport;
-                  };
-            }
-
+            // if we get here, the final response has been received - emit it
+            // and break further execution
+            yield {
+              done: true,
+              value: await transformDone(value[0]),
+            };
             return;
           }
         } else {
@@ -201,4 +177,56 @@ export class WireDecodeStream<TEntry, TReport = null> {
       "WireDecodeStream.getReader(): reached unexpected end of reader loop without receiving encoded report entry",
     );
   }
+
+  /**
+   * utility to read the string value of the entire input stream.
+   */
+  async toString(): Promise<string> {
+    const reader = this.#readStream.getReader();
+
+    let buffer = "";
+    let result: ReadableStreamReadResult<Uint8Array> | undefined;
+
+    while (!(result = await reader.read()).done) {
+      buffer += this.#textDecoder.decode(result.value);
+    }
+
+    return buffer;
+  }
+}
+
+/**
+ * basic utility that combines WireDecodeStream and WireEncodeStream to allow
+ * easy processing and transformation of inputs.
+ *
+ * @note returning null in the transformer callback will result in the entry
+ *       being dropped on the output stream.
+ */
+export function transformWireStream(
+  input: ReadableStream<Uint8Array>,
+  transformer: (entry: { done: boolean; value: string | null }) => string | null | Promise<string | null>,
+): WireEncodeStream {
+  const decodeStream = new WireDecodeStream(input);
+  const encodeStream = new WireEncodeStream();
+
+  (async () => {
+    for await (const entry of decodeStream.getReader()) {
+      const transformed = await transformer(entry);
+
+      if (!entry.done) {
+        if (transformed != null) {
+          encodeStream.push(transformed);
+        }
+      } else {
+        encodeStream.close(transformed);
+        return;
+      }
+    }
+
+    // if we get here, the stream was resolved without encountering an explicit
+    // close entry - do so manually
+    encodeStream.close(null);
+  })();
+
+  return encodeStream;
 }

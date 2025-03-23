@@ -145,7 +145,7 @@ export class DirectRPCClient {
    * cached configurations to apply when creating new batch windows for sending
    * multiple requests through a single HTTP socket.
    */
-  #batchConfig: BatchConfig;
+  #batchConfig: BatchConfig & { isHttps: boolean };
 
   /**
    * configuration of batch window as provided when instantiating the client.
@@ -282,6 +282,7 @@ export class DirectRPCClient {
     // prepare configurations for handling batches of requests
     this.#batchConfig = {
       endpointUrl: `${config.baseUrl ?? "https://rpc.direct.dev"}/v1/${encodeURIComponent(config.projectId)}/${encodeURIComponent(config.networkId)}`,
+      isHttps: config.baseUrl ? config.baseUrl.startsWith("https://") : false,
     };
     this.#batchWindowMs = config.batchWindowMs ?? 25;
 

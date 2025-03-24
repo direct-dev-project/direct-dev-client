@@ -66,7 +66,7 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
         pack.strOrNum((input as DirectRPCSuccessResponse).id) +
         pack.bool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges ?? false) +
         pack.nullableStr((input as DirectRPCSuccessResponse).expiresAt) +
-        pack.json((input as DirectRPCSuccessResponse).result),
+        pack.primitive((input as DirectRPCSuccessResponse).result as string),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
         const expiresWhenBlockHeightChanges = unpack.bool(input, id[1]);

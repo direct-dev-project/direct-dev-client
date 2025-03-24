@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { isRpcRequest, isRpcSuccessResponse, isRpcErrorResponse, isDirectRPCHead } from "../guards.js";
+import { isRpcRequest, isRpcSuccessResponse, isRpcErrorResponse } from "../guards.js";
 
 describe("isRpcRequest", () => {
   it("should validate a correct RPC request", () => {
@@ -53,22 +53,5 @@ describe("isRpcErrorResponse", () => {
     expect(isRpcErrorResponse({ id: 1, error: "not an object" })).toBe(false);
     expect(isRpcErrorResponse({ id: 1, error: { code: true, message: "Error occurred" } })).toBe(false);
     expect(isRpcErrorResponse({ id: 1, error: { code: 500, message: 123 } })).toBe(false);
-  });
-});
-
-describe("isDirectRPCHead", () => {
-  it("should validate a correct DirectRPCHead", () => {
-    expect(isDirectRPCHead({ p: ["hash1", "hash2"], b: "123", e: "456" })).toBe(true);
-  });
-
-  it("should reject a DirectRPCHead missing required properties", () => {
-    expect(isDirectRPCHead({ b: "123", e: "456" })).toBe(false);
-  });
-
-  it("should reject a DirectRPCHead with incorrect property types", () => {
-    expect(isDirectRPCHead({ p: "not an array", b: "123", e: "456" })).toBe(false);
-    expect(isDirectRPCHead({ p: [123, "hash2"], b: "123", e: "456" })).toBe(false);
-    expect(isDirectRPCHead({ p: ["hash1", "hash2"], b: 123, e: "456" })).toBe(false);
-    expect(isDirectRPCHead({ p: ["hash1", "hash2"], b: "123", e: 456 })).toBe(false);
   });
 });

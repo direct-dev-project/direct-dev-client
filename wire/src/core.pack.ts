@@ -1,14 +1,29 @@
-const types = ["string", "number", "boolean", "null", "undefined"] as const;
+//
+// mapping of primitive types and their designated charCodes used when decoding
+// union of primitive types
+//
+const types = ["string", "dictionary", "number", "boolean", "null", "undefined"] as const;
 
-const typeCharCodes = Object.fromEntries(types.map((type, index) => [type, 50 + index])) as Record<
+const typeCharCodes = Object.fromEntries(types.map((type, index) => [type, 33 + index])) as Record<
   (typeof types)[number],
   number
 >;
 
-const typeChars = Object.fromEntries(types.map((type, index) => [type, String.fromCharCode(50 + index)])) as Record<
+const typeChars = Object.fromEntries(types.map((type, index) => [type, String.fromCharCode(33 + index)])) as Record<
   (typeof types)[number],
   string
 >;
+
+//
+// mapping of dictionary words used to further reduce payload size by
+// compression common strings into a well-known dictionary
+//
+const dictionaryStrings = ["latest", "eth_call", "eth_blockNumber"];
+
+const stringToDictionaryChar = Object.fromEntries(
+  dictionaryStrings.map((word, index) => [word, String.fromCharCode(33 + index)]),
+);
+const charCodeToDictionaryString = Object.fromEntries(dictionaryStrings.map((word, index) => [33 + index, word]));
 
 /**
  * blazingly fast utility functions to serialize primitive input types to Wire
@@ -16,20 +31,44 @@ const typeChars = Object.fromEntries(types.map((type, index) => [type, String.fr
  */
 export const pack = {
   str(input: string): string {
-    return input.length + ":" + input;
+    const dictionaryChar = stringToDictionaryChar[input];
+
+    return dictionaryChar == null ? input.length + ":" + input : typeChars.dictionary + dictionaryChar;
   },
 
   nullableStr(input: string | null | undefined): string {
-    return input == null
-      ? input === null
-        ? typeChars.null
-        : typeChars.undefined
-      : typeChars.string + input.length + ":" + input;
+    if (input == null) {
+      return input === null ? typeChars.null : typeChars.undefined;
+    }
+
+    const dictionaryChar = stringToDictionaryChar[input];
+    return dictionaryChar == null
+      ? typeChars.string + input.length + ":" + input
+      : typeChars.dictionary + dictionaryChar;
   },
 
   strOrNum(input: string | number): string {
     if (typeof input === "string") {
-      return typeChars.string + input.length + ":" + input;
+      const dictionaryChar = stringToDictionaryChar[input];
+      return dictionaryChar == null
+        ? typeChars.string + input.length + ":" + input
+        : typeChars.dictionary + dictionaryChar;
+    }
+
+    const str = input.toString();
+    return typeChars.number + str.length + ":" + str;
+  },
+
+  nullableStrOrNum(input: string | number | null | undefined): string {
+    if (input == null) {
+      return input === null ? typeChars.null : typeChars.undefined;
+    }
+
+    if (typeof input === "string") {
+      const dictionaryChar = stringToDictionaryChar[input];
+      return dictionaryChar == null
+        ? typeChars.string + input.length + ":" + input
+        : typeChars.dictionary + dictionaryChar;
     }
 
     const str = input.toString();
@@ -51,7 +90,10 @@ export const pack = {
     }
 
     if (typeof input === "string") {
-      return typeChars.string + input.length + ":" + input;
+      const dictionaryChar = stringToDictionaryChar[input];
+      return dictionaryChar == null
+        ? typeChars.string + input.length + ":" + input
+        : typeChars.dictionary + dictionaryChar;
     }
 
     if (typeof input === "number") {
@@ -71,6 +113,10 @@ export const pack = {
 
     return result;
   },
+
+  json(input: unknown) {
+    return pack.nullableStr(input != null ? JSON.stringify(input) : input);
+  },
 };
 
 /**
@@ -79,6 +125,12 @@ export const pack = {
  */
 export const unpack = {
   str(input: string, cursor: number): [string, number] {
+    if (input.charCodeAt(cursor) === typeCharCodes.dictionary) {
+      // if we found a dictionary match, then return the value from the
+      // built-in dictionary
+      return [charCodeToDictionaryString[input.charCodeAt(cursor + 1)] ?? "", cursor + 2];
+    }
+
     // low-level optimized method to extract the length of the string,
     // incrementing the cursor as long as we're encountering numeric characters
     // (0-9)
@@ -93,19 +145,47 @@ export const unpack = {
   },
 
   nullableStr(input: string, cursor: number): [string | null | undefined, number] {
-    const typeCharCode = input.charCodeAt(cursor);
-
-    if (typeCharCode === typeCharCodes.string) {
+    if (input.charCodeAt(cursor) === typeCharCodes.string) {
       return unpack.str(input, cursor + 1);
     }
 
-    return [typeCharCode === typeCharCodes.null ? null : undefined, cursor + 1];
+    if (input.charCodeAt(cursor) === typeCharCodes.dictionary) {
+      // if we found a dictionary match, then return the value from the
+      // built-in dictionary
+      return [charCodeToDictionaryString[input.charCodeAt(cursor + 1)] ?? "", cursor + 2];
+    }
+
+    return [input.charCodeAt(cursor) === typeCharCodes.null ? null : undefined, cursor + 1];
   },
 
   strOrNum(input: string, cursor: number): [string | number, number] {
-    return input.charCodeAt(cursor) === typeCharCodes.string
-      ? unpack.str(input, cursor + 1)
-      : unpack.num(input, cursor + 1);
+    if (input.charCodeAt(cursor) === typeCharCodes.string) {
+      return unpack.str(input, cursor + 1);
+    }
+
+    if (input.charCodeAt(cursor) === typeCharCodes.number) {
+      return unpack.num(input, cursor + 1);
+    }
+
+    // if we found a dictionary match, then return the value from the
+    // built-in dictionary
+    return [charCodeToDictionaryString[input.charCodeAt(cursor + 1)] ?? "", cursor + 2];
+  },
+
+  nullableStrOrNum(input: string, cursor: number): [string | number | null | undefined, number] {
+    if (input.charCodeAt(cursor) === typeCharCodes.string) {
+      return unpack.str(input, cursor + 1);
+    }
+
+    if (input.charCodeAt(cursor) === typeCharCodes.number) {
+      return unpack.num(input, cursor + 1);
+    }
+
+    if (input.charCodeAt(cursor) === typeCharCodes.dictionary) {
+      return [charCodeToDictionaryString[input.charCodeAt(cursor + 1)] ?? "", cursor + 2];
+    }
+
+    return [input.charCodeAt(cursor) === typeCharCodes.null ? null : undefined, cursor + 1];
   },
 
   num(input: string, cursor: number): [number, number] {
@@ -125,21 +205,19 @@ export const unpack = {
   },
 
   primitive(input: string, cursor: number): [string | number | boolean | null | undefined, number] {
-    const typeCharCode = input.charCodeAt(cursor);
-
-    if (typeCharCode === typeCharCodes.string) {
+    if (input.charCodeAt(cursor) === typeCharCodes.string) {
       return unpack.str(input, cursor + 1);
     }
 
-    if (typeCharCode === typeCharCodes.number) {
+    if (input.charCodeAt(cursor) === typeCharCodes.number) {
       return unpack.num(input, cursor + 1);
     }
 
-    if (typeCharCode === typeCharCodes.null) {
+    if (input.charCodeAt(cursor) === typeCharCodes.null) {
       return [null, cursor + 1];
     }
 
-    if (typeCharCode === typeCharCodes.undefined) {
+    if (input.charCodeAt(cursor) === typeCharCodes.undefined) {
       return [undefined, cursor + 1];
     }
 
@@ -168,5 +246,11 @@ export const unpack = {
     }
 
     return [result, cursor];
+  },
+
+  json(input: string, cursor: number): [unknown, number] {
+    const str = unpack.nullableStr(input, cursor);
+
+    return [str[0] != null ? JSON.parse(str[0]) : str[0], str[1]];
   },
 };

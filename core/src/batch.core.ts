@@ -1,7 +1,11 @@
-import type { DirectRPCErrorResponse, DirectRPCRequest, DirectRPCSuccessResponse, Logger } from "@direct.dev/shared";
+import type {
+  DirectRPCErrorResponse,
+  DirectRPCHead,
+  DirectRPCRequest,
+  DirectRPCSuccessResponse,
+  Logger,
+} from "@direct.dev/shared";
 import { WireDecodeStream, wire, WireEncodeStream } from "@direct.dev/wire";
-
-import type { DirectRPCHead } from "./guards.js";
 
 export type BatchConfig = {
   /**
@@ -107,7 +111,7 @@ export abstract class DirectRPCBatch {
       }
 
       return new WireDecodeStream(res.body).getReader((input) => {
-        return JSON.parse(input);
+        return wire.RPCResponse.decode(input)[0];
       });
     } catch (err) {
       this.logger.error("Batch.dispatch", "fetch failed", err);

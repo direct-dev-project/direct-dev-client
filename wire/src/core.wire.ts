@@ -59,7 +59,7 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
    * utility method provided when instantiating the Wire, which determines
    * which packer to employ based on the structure of the input.
    */
-  #encodeMapper: (input: T) => string | undefined;
+  #encodeMapper: (input: T, extraArgs: TExtraEncodeArgs) => string | undefined;
 
   /**
    * pre-compiled map of PackerId --> structure key, so that we can perform
@@ -75,13 +75,13 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
   constructor(packer: Omit<WirePacker<NoInfer<T>, NoInfer<TExtraEncodeArgs>>, "id">);
   constructor(
     packers: WirePackerCollection<NoInfer<T>, NoInfer<TExtraEncodeArgs>>,
-    mapper: (input: NoInfer<T>) => string | undefined,
+    mapper: (input: NoInfer<T>, extraArgs: TExtraEncodeArgs) => string | undefined,
   );
   constructor(
     packers:
       | Omit<WirePacker<NoInfer<T>, NoInfer<TExtraEncodeArgs>>, "id">
       | WirePackerCollection<NoInfer<T>, NoInfer<TExtraEncodeArgs>>,
-    mapper?: (input: NoInfer<T>) => string | undefined,
+    mapper?: (input: NoInfer<T>, extraArgs: TExtraEncodeArgs) => string | undefined,
   ) {
     if (mapper === undefined) {
       this.#packers = {
@@ -100,6 +100,10 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
     let idLength: number | undefined;
 
     Object.entries(this.#packers).forEach(([key, { id }]) => {
+      if (id.charAt(0) === "@") {
+        throw new Error(`new Wire(): structure IDs must not start with @ (${id})`);
+      }
+
       if (idLength === undefined) {
         idLength = id.length;
       } else if (id.length !== idLength) {
@@ -125,11 +129,11 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
    * handling of unknown structures.
    */
   encode(input: T, ...extraArgs: TExtraEncodeArgs): string {
-    const packerKey = this.#encodeMapper(input);
+    const packerKey = this.#encodeMapper(input, extraArgs);
     if (packerKey === undefined) return JSON.stringify(input);
 
     const packer = this.#packers[packerKey];
-    return packer ? packer.id + packer.encode(input, extraArgs) : pack.str(JSON.stringify(input));
+    return packer ? packer.id + packer.encode(input, extraArgs) : "@" + pack.str(JSON.stringify(input));
   }
 
   /**
@@ -141,7 +145,7 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
    *        that for maximum hashing performance
    */
   hash(input: T, encodedStr?: string, ...extraArgs: TExtraEncodeArgs): Promise<string> {
-    const packerKey = this.#encodeMapper(input);
+    const packerKey = this.#encodeMapper(input, extraArgs);
     if (packerKey === undefined) return sha256(sortObject(input));
 
     const packer = this.#packers[packerKey];
@@ -159,13 +163,13 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
     const packerKey = this.#decodeMap.get(packerId);
 
     if (!packerKey) {
-      const str = unpack.str(input, cursor);
+      const str = unpack.str(input, cursor + 1);
       return [JSON.parse(str[0]), str[1]];
     }
 
     const packer = this.#packers[packerKey];
     if (!packer) {
-      const str = unpack.str(input, cursor);
+      const str = unpack.str(input, cursor + 1);
       return [JSON.parse(str[0]), str[1]];
     }
 

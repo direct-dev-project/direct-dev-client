@@ -20,13 +20,13 @@ export type DirectRPCSuccessResponse = {
    * indicates if the response can be cached locally until block height
    * changes.
    */
-  b?: true;
+  expiresWhenBlockHeightChanges?: boolean;
 
   /**
    * indicates if the response can be cached locally until a specific
    * timestamp in the future (ie. "expires at").
    */
-  e?: string;
+  expiresAt?: string | null;
 };
 
 /**
@@ -38,7 +38,34 @@ export type DirectRPCErrorResponse = {
   error: {
     code: string | number;
     message: string;
+    data?: unknown;
   };
+};
+
+/**
+ * Direct.dev sends a head object on all requests, which informs the client
+ * about the current state of the backend, allowing it to synchronize state and
+ * maximize cache hit count directly in the client.
+ */
+export type DirectRPCHead = {
+  /**
+   * array of RPCRequestHashes that have been predicted for subsequent
+   * requests, and which will be included within the batch automatically.
+   */
+  predictions: RPCRequestHash[];
+
+  /**
+   * the currently known block height from within the mirror, at the time of
+   * receiving the request.
+   */
+  blockHeight?: string | null;
+
+  /**
+   * timestamp for expiration of the currently known block height, which lets
+   * the client know for how long it can return responses that are tied to this
+   * block.
+   */
+  blockHeightExpiresAt?: string | null;
 };
 
 /**

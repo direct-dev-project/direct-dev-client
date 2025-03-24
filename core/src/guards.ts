@@ -3,7 +3,6 @@ import {
   type DirectRPCErrorResponse,
   type DirectRPCRequest,
   type DirectRPCSuccessResponse,
-  type RPCRequestHash,
 } from "@direct.dev/shared";
 
 /**
@@ -90,52 +89,6 @@ export function isRpcErrorResponse(input: unknown): input is DirectRPCErrorRespo
   }
 
   if (errorMessageType !== "string") {
-    return false;
-  }
-
-  return true;
-}
-
-export type DirectRPCHead = {
-  /**
-   * array of RPCRequestHashes that have been predicted for subsequent
-   * requests, and which will be included within the batch automatically.
-   */
-  p: RPCRequestHash[];
-
-  /**
-   * the currently known block height from within the mirror, at the time of
-   * receiving the request.
-   */
-  b?: string;
-
-  /**
-   * timestamp for expiration of the currently known block height, which lets
-   * the client know for how long it can return responses that are tied to this
-   * block.
-   */
-  e?: string;
-};
-
-/**
- * handcrafted validator for Direct.dev response heads, designed to do
- * blazingly fast validation of unknown input with zero dependencies in the
- * client layer.
- */
-export function isDirectRPCHead(input: unknown): input is DirectRPCHead {
-  if (!isRecord(input)) {
-    return false;
-  }
-
-  if (!Array.isArray(input["p"]) || input["p"].some((it) => typeof it !== "string")) {
-    return false;
-  }
-
-  if ("b" in input && typeof input["b"] !== "string") {
-    return false;
-  }
-
-  if ("e" in input && typeof input["e"] !== "string") {
     return false;
   }
 

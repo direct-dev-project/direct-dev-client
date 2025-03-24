@@ -6,6 +6,7 @@ import type {
   DirectRPCSuccessResponse,
   LogLevel,
   RPCRequestHash,
+  DirectRPCHead,
 } from "@direct.dev/shared";
 import {
   Logger,
@@ -19,7 +20,7 @@ import {
 import { wire, WireDecodeStream, WireEncodeStream } from "@direct.dev/wire";
 
 import type { BatchConfig, DirectRPCBatch } from "./batch.core.js";
-import { isDirectRPCHead, isRpcErrorResponse, isRpcRequest, isRpcSuccessResponse } from "./guards.js";
+import { isRpcErrorResponse, isRpcRequest, isRpcSuccessResponse } from "./guards.js";
 import { createBatch } from "./util.create-batch.js";
 import { isSupportedRequest } from "./util.is-supported-request.js";
 import { normalizeContextFromUrl } from "./util.normalize-url.js";
@@ -518,7 +519,7 @@ export class DirectRPCClient {
     for await (const { value: response } of iterator) {
       // if we're waiting for the head of a response, then parse it as such
       if (isDirectHeadPending) {
-        if (!isDirectRPCHead(response)) {
+        if (!("predictions" in response)) {
           throw new Error("DirectRPCClient: invalid response structure received, expected head");
         }
 
@@ -526,7 +527,7 @@ export class DirectRPCClient {
 
         // for all incoming predictions, instantly register them as being
         // inflight to prevent duplication on future events
-        for (const predictedReqHash of response.p) {
+        for (const predictedReqHash of response.predictions) {
           if (!this.#inflightCache.has(predictedReqHash)) {
             const promise = makeDeferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>();
 
@@ -546,10 +547,10 @@ export class DirectRPCClient {
 
         // update currently known block height
         this.#currentBlockHeight =
-          response.b && response.e
+          response.blockHeight && response.blockHeightExpiresAt
             ? {
-                value: response.b,
-                expiresAt: new Date(response.e),
+                value: response.blockHeight,
+                expiresAt: new Date(response.blockHeightExpiresAt),
               }
             : undefined;
 
@@ -575,12 +576,16 @@ export class DirectRPCClient {
       remainingRequestHashes.delete(reqHash);
       this.#inflightCache.get(reqHash)?.__resolve(response);
 
-      if (reqHash && ("b" in response || "e" in response) && this.#currentBlockHeight) {
+      if (
+        reqHash &&
+        ("expiresWhenBlockHeightChanges" in response || "expiresAt" in response) &&
+        this.#currentBlockHeight
+      ) {
         this.#requestCache.set(reqHash, {
           value: response,
           expiration: {
-            whenBlockHeightChanges: response.b ?? false,
-            expiresAt: response.e ? new Date(response.e) : undefined,
+            whenBlockHeightChanges: response.expiresWhenBlockHeightChanges ?? false,
+            expiresAt: response.expiresAt ? new Date(response.expiresAt) : undefined,
           },
           inception: {
             blockHeight: this.#currentBlockHeight.value,
@@ -607,7 +612,12 @@ export class DirectRPCClient {
    */
   async #fetchFromDirect(
     batch: DirectRPCBatch,
-  ): Promise<[isDirectHeadPending: boolean, AsyncGenerator<{ done: boolean; value: unknown }>]> {
+  ): Promise<
+    [
+      isDirectHeadPending: boolean,
+      AsyncGenerator<{ done: boolean; value: DirectRPCHead | DirectRPCSuccessResponse | DirectRPCErrorResponse }>,
+    ]
+  > {
     const cacheHitCount = this.#cacheHitCount;
     const inflightHitCount = this.#inflightHitCount;
     const samples = this.#clientSamples;
@@ -664,7 +674,9 @@ export class DirectRPCClient {
    * fail-over mechanism to perform requests directly against the designated
    * provider nodes
    */
-  #fetchFromProviders(requests: DirectRPCRequest[]): AsyncGenerator<{ done: boolean; value: unknown }> {
+  #fetchFromProviders(
+    requests: DirectRPCRequest[],
+  ): AsyncGenerator<{ done: boolean; value: DirectRPCSuccessResponse | DirectRPCErrorResponse }> {
     //
     // STEP: split requests into batches, which can be performed against
     // specific providers
@@ -723,7 +735,7 @@ export class DirectRPCClient {
     chunk: DirectRPCRequest[],
     providerId: SupportedProviderId | undefined,
     failoverMode = false,
-  ): Promise<unknown[]> {
+  ): Promise<Array<DirectRPCSuccessResponse | DirectRPCErrorResponse>> {
     //
     // STEP: determine which node to use to perform this request based on
     // incoming configurations
@@ -760,21 +772,24 @@ export class DirectRPCClient {
       });
 
       if (!req.ok) {
-        throw new Error("#fetchFromProviders: unknown server error occurred");
+        throw new Error("#fetchChunkFromProviders: unknown server error occurred");
       }
 
-      // yield responses through the AsyncGenerator interface
+      // validate the structure of the responses
       const res = await req.json();
+      const responses = Array.isArray(res) ? res : [res];
 
-      if (!Array.isArray(res)) {
-        throw new Error("#fetchFromProviders: invalid response received, expected array");
+      for (const res of responses) {
+        if (!isRpcSuccessResponse(res) && !isRpcErrorResponse(res)) {
+          throw new Error("#fetchChunkFromProviders: received invalid response");
+        }
       }
 
       // if we get here, things went OK, reset any previous backoff data and
       // continue operations as usual through the Direct.dev infrastructure
       this.#backoffMode[node.url] = undefined;
 
-      return res;
+      return responses;
     } catch (err) {
       //
       // STEP: handle errors to configure exponential backoff of nodes and

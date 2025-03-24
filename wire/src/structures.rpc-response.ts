@@ -1,46 +1,120 @@
-import type { DirectRPCRequest } from "@direct.dev/shared";
+import type { DirectRPCErrorResponse, DirectRPCSuccessResponse, DirectRPCHead } from "@direct.dev/shared";
 
 import { pack, unpack } from "./core.pack.js";
 import { Wire } from "./core.wire.js";
 
-type RPCRequestStructure = DirectRPCRequest & {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  params?: any;
-
-  /**
-   * when doing encoding/hashing of requests, we sometimes need to override the
-   * block height to provide consistency guarantees for data returned.
-   */
-  __overrideBlockHeight?: string;
-};
+type RPCResponseStructure = DirectRPCSuccessResponse | DirectRPCErrorResponse | DirectRPCHead;
 
 /**
- * implementation of WirePackers for common eth request signatures
+ * implementation of WirePackers for common eth response signatures
  *
  * @todo (Mads, 20-03-2025): finalize implementations for frequently used
  *       requests
  */
-export const RPCRequest = new Wire<RPCRequestStructure>(
+export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string | null | undefined]>(
   {
-    direct_primer: {
+    //
+    // Direct.dev proprietary response structures
+    //
+    direct_head: {
       id: "0",
-      encode: (input) => pack.strOrNum(input.id) + pack.nullableStr(input.params[0]),
+      encode: (input) =>
+        pack.arr((input as DirectRPCHead).predictions, (it) => pack.str(it)) +
+        pack.nullableStr((input as DirectRPCHead).blockHeight) +
+        pack.nullableStr((input as DirectRPCHead).blockHeightExpiresAt),
       decode: (input, cursor) => {
-        const id = unpack.strOrNum(input, cursor);
-        const context = unpack.nullableStr(input, id[1]);
+        const predictions = unpack.arr(input, cursor, (cursor) => unpack.str(input, cursor));
+        const blockHeight = unpack.nullableStr(input, predictions[1]);
+        const blockHeightExpiresAt = unpack.nullableStr(input, blockHeight[1]);
 
         return [
           {
-            id: id[0],
-            method: "direct_primer",
-            params: [context[0]],
+            predictions: predictions[0],
+            blockHeight: blockHeight[0],
+            blockHeightExpiresAt: blockHeightExpiresAt[0],
           },
-          context[1],
+          blockHeightExpiresAt[1],
         ];
       },
     },
 
-    eth_blockNumber: {
+    direct_primer: {
+      id: "1",
+      encode: (input) => pack.strOrNum((input as DirectRPCSuccessResponse).id),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+
+        return [
+          {
+            id: id[0],
+            result: "",
+          },
+          id[1],
+        ];
+      },
+    },
+
+    //
+    // generic fallbacks if we do not yet have optimized packers implemented for
+    // the specific responses
+    //
+
+    rpc_success: {
+      id: "2",
+      encode: (input) =>
+        pack.strOrNum((input as DirectRPCSuccessResponse).id) +
+        pack.bool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges ?? false) +
+        pack.nullableStr((input as DirectRPCSuccessResponse).expiresAt) +
+        pack.json((input as DirectRPCSuccessResponse).result),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const expiresWhenBlockHeightChanges = unpack.bool(input, id[1]);
+        const expiresAt = unpack.nullableStr(input, expiresWhenBlockHeightChanges[1]);
+        const result = unpack.json(input, expiresAt[1]);
+
+        return [
+          {
+            id: id[0],
+            result: result[0],
+            expiresWhenBlockHeightChanges: expiresWhenBlockHeightChanges[0],
+            expiresAt: expiresAt[0],
+          },
+          expiresAt[1],
+        ];
+      },
+    },
+
+    rpc_error: {
+      id: "3",
+      encode: (input) =>
+        pack.strOrNum((input as DirectRPCErrorResponse).id) +
+        pack.strOrNum((input as DirectRPCErrorResponse).error.code) +
+        pack.str((input as DirectRPCErrorResponse).error.message) +
+        pack.json((input as DirectRPCErrorResponse).error.data),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const code = unpack.strOrNum(input, id[1]);
+        const message = unpack.str(input, code[1]);
+        const json = unpack.json(input, message[1]);
+
+        return [
+          {
+            id: id[0],
+            error: {
+              code: code[0],
+              message: message[0],
+              data: json[0],
+            },
+          },
+          json[1],
+        ];
+      },
+    },
+
+    /**
+     * @todo (Mads): determine which calls to include handling for
+     * ```ts
+     * eth_blockNumber: {
       id: "1",
       encode: (input) => pack.strOrNum(input.id),
       decode: (input, cursor) => {
@@ -133,10 +207,6 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
         ];
       },
     },
-
-    /**
-     * @todo (Mads): determine which calls to include handling for
-     * ```ts
      * eth_getBalance: readonly [RPCAddressValue, RPCBlockHeightParam];
      * eth_getBlockByHash: readonly [RPCHashValue, boolean];
      * eth_getBlockByNumber: readonly [RPCBlockHeightParam, boolean];
@@ -156,18 +226,23 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
      * ```
      **/
   },
-  (input) => {
-    return input.method;
+  (input, [requestMethod]) => {
+    if ("result" in input) {
+      switch (requestMethod) {
+        case "direct_primer":
+          return requestMethod;
+
+        default:
+          return "rpc_success";
+      }
+    }
+
+    if ("predictions" in input) {
+      return "direct_head";
+    }
+
+    if ("error" in input) {
+      return "rpc_error";
+    }
   },
 );
-
-/**
- * blazingly fast and consistent hasher for ETH requests, which consistently
- * provides the same hash regardless of request ID and property ordering
- */
-export function hashRPCRequest(
-  req: Omit<RPCRequestStructure, "id"> & { id?: string | number },
-  encodedStr?: string,
-): Promise<string> {
-  return RPCRequest.hash({ ...req, id: "" }, encodedStr);
-}

@@ -9,7 +9,7 @@ import { DirectRPCFetchBatch } from "./batch.fetch.js";
  * supported by the user's browser.
  */
 export function createBatch(config: BatchConfig & { isHttps: boolean }, logger: Logger): DirectRPCBatch {
-  return supportsFetchDuplexHalf && config.isHttps
+  return supportsFetchDuplex.current === true && config.isHttps
     ? new DirectRPCDuplexFetchBatch(config, logger)
     : new DirectRPCFetchBatch(config, logger);
 }
@@ -17,7 +17,11 @@ export function createBatch(config: BatchConfig & { isHttps: boolean }, logger: 
 /**
  * feature checker, to review if the browser supports using `duplex: half`
  */
-const supportsFetchDuplexHalf = (() => {
+const supportsFetchDuplex = {
+  current: false,
+};
+
+(async () => {
   try {
     const req = new Request("", {
       method: "POST",
@@ -30,8 +34,32 @@ const supportsFetchDuplexHalf = (() => {
 
     // @ts-expect-error: duplex is not yet included in TypeScript
     // definitions for Response
-    return req.duplex === "half";
+    if (req.duplex !== "half") {
+      return false;
+    }
+
+    // mock a fetch request with duplex: half to ensure that the browser
+    // actually supports streaming and no browser extensions will interrupt
+    // support (as is the case with e.g. Requestly)
+    return fetch("data:a/a;charset=utf-8,", {
+      method: "POST",
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue("duplex");
+          controller.close();
+        },
+      }),
+
+      // @ts-expect-error: duplex is not yet included in TypeScript
+      // definitions for Response
+      duplex: "half",
+    }).then(
+      () => true,
+      () => false,
+    );
   } catch {
     return false;
   }
-})();
+})().then((result) => {
+  supportsFetchDuplex.current = result;
+});

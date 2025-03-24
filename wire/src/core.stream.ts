@@ -2,6 +2,11 @@ import { makeDeferred } from "@direct.dev/shared";
 
 import { pack, unpack } from "./core.pack.js";
 
+// ID of the Wire stream version, added to allow backwards compatible
+// versioning of wire encoder/decoders between backend and clients
+const VERSION_ID = 1;
+const VERSION_CHAR = String.fromCharCode(48 + VERSION_ID); // technically limited at 65.000'ish versions
+
 export type WireStreamEntry<T, TDone = null> =
   | {
       done: false;
@@ -56,6 +61,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
     });
 
     this.#controllerRef = controllerRef;
+    this.#controllerRef.current?.enqueue(this.#textEncoder.encode(VERSION_CHAR));
   }
 
   /**
@@ -91,6 +97,13 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
  */
 export class WireDecodeStream {
   /**
+   * exposes the version of the received Wire stream, so integrations can take
+   * meassures to add backwards compatibility for legacy clients when handling
+   * data.
+   */
+  readonly version = makeDeferred<number>();
+
+  /**
    * the provided readable stream, from which entries will be read and emitted
    * as soon as they become available.
    */
@@ -111,16 +124,23 @@ export class WireDecodeStream {
    * sequentially as soon as they become available.
    */
   async *getReader<T = string, TDone = string>(
-    transformEntry: (input: string) => Promise<T> | T = (input) => input as T,
-    transformDone: (input: string) => Promise<TDone> | TDone = (input) => input as TDone,
+    transformEntry: (input: string, version: number) => Promise<T> | T = (input) => input as T,
+    transformDone: (input: string, version: number) => Promise<TDone> | TDone = (input) => input as TDone,
   ): AsyncGenerator<WireStreamEntry<T, TDone>> {
     const reader = this.#readStream.getReader();
 
+    let wireVersion: number | undefined;
     let buffer = "";
     let result: ReadableStreamReadResult<Uint8Array> | undefined;
 
     while (!(result = await reader.read()).done) {
       buffer += this.#textDecoder.decode(result.value);
+
+      // if we haven't extracted the version of the parser yet, then do so now
+      if (wireVersion === undefined) {
+        this.version.__resolve((wireVersion = buffer.charCodeAt(0) - 48));
+        buffer = buffer.slice(1);
+      }
 
       while (buffer.length > 0) {
         if (buffer.charCodeAt(0) === 50) {
@@ -150,7 +170,7 @@ export class WireDecodeStream {
             // yield the decoded entry
             yield {
               done: false,
-              value: await transformEntry(value[0]),
+              value: await transformEntry(value[0], wireVersion),
             };
 
             // slice the buffer, so that the previously emitted value is no
@@ -161,7 +181,7 @@ export class WireDecodeStream {
             // and break further execution
             yield {
               done: true,
-              value: await transformDone(value[0]),
+              value: await transformDone(value[0], wireVersion),
             };
             return;
           }
@@ -204,14 +224,17 @@ export class WireDecodeStream {
  */
 export function transformWireStream(
   input: ReadableStream<Uint8Array>,
-  transformer: (entry: { done: boolean; value: string | null }) => string | null | Promise<string | null>,
+  transformer: (
+    entry: { done: boolean; value: string | null },
+    version: number,
+  ) => string | null | Promise<string | null>,
 ): WireEncodeStream {
   const decodeStream = new WireDecodeStream(input);
   const encodeStream = new WireEncodeStream();
 
   (async () => {
     for await (const entry of decodeStream.getReader()) {
-      const transformed = await transformer(entry);
+      const transformed = await transformer(entry, await decodeStream.version);
 
       if (!entry.done) {
         if (transformed != null) {

@@ -16,6 +16,7 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
     //
     // Direct.dev proprietary response structures
     //
+
     direct_head: {
       id: "0",
       encode: (input) =>
@@ -59,8 +60,33 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
     // the specific responses
     //
 
-    rpc_success: {
+    rpc_success__primitive: {
       id: "2",
+      encode: (input) =>
+        pack.strOrNum((input as DirectRPCSuccessResponse).id) +
+        pack.bool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges ?? false) +
+        pack.nullableStr((input as DirectRPCSuccessResponse).expiresAt) +
+        pack.json((input as DirectRPCSuccessResponse).result),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const expiresWhenBlockHeightChanges = unpack.bool(input, id[1]);
+        const expiresAt = unpack.nullableStr(input, expiresWhenBlockHeightChanges[1]);
+        const result = unpack.primitive(input, expiresAt[1]);
+
+        return [
+          {
+            id: id[0],
+            result: result[0],
+            expiresWhenBlockHeightChanges: expiresWhenBlockHeightChanges[0],
+            expiresAt: expiresAt[0],
+          },
+          expiresAt[1],
+        ];
+      },
+    },
+
+    rpc_success__json: {
+      id: "3",
       encode: (input) =>
         pack.strOrNum((input as DirectRPCSuccessResponse).id) +
         pack.bool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges ?? false) +
@@ -85,7 +111,7 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
     },
 
     rpc_error: {
-      id: "3",
+      id: "4",
       encode: (input) =>
         pack.strOrNum((input as DirectRPCErrorResponse).id) +
         pack.strOrNum((input as DirectRPCErrorResponse).error.code) +
@@ -233,6 +259,19 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
           return requestMethod;
 
         default:
+          switch (typeof input.result) {
+            case "bigint":
+            case "boolean":
+            case "number":
+            case "string":
+            case "undefined":
+              return "rpc_success__primitive";
+
+            case "symbol":
+            case "object":
+            case "function":
+              return input.result != null ? "rpc_success__json" : "rpc_success__primitive";
+          }
           return "rpc_success";
       }
     }

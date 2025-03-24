@@ -111,7 +111,14 @@ export abstract class DirectRPCBatch {
       }
 
       return new WireDecodeStream(res.body).getReader((input) => {
-        return wire.RPCResponse.decode(input)[0];
+        // slight CPU overhead (~0,01-0,05ms pr. response object), ensuring
+        // that responses decoded through the Wire protocol will have identical
+        // structure to responses decoded through regular JSON
+        //
+        // namely, this ensures that "undefined" optional properties are
+        // omitted in the emitted object, whereas Wire will include them as
+        // undefined values
+        return JSON.parse(JSON.stringify(wire.RPCResponse.decode(input)[0]));
       });
     } catch (err) {
       this.logger.error("Batch.dispatch", "fetch failed", err);

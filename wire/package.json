@@ -26,7 +26,7 @@
     "release:client": "npm publish"
   },
   "dependencies": {
-    "@direct.dev/shared": "0.0.0"
+    "@direct.dev/shared": "0.1.0"
   },
   "devDependencies": {
     "@direct.dev/tooling-eslint-config": "*",

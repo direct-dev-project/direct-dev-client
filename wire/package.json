@@ -1,7 +1,10 @@
 {
   "name": "@direct.dev/wire",
   "version": "0.1.0",
-  "repository": "direct-dev-project/direct-dev-client",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/direct-dev-project/direct-dev-client.git"
+  },
   "bugs": "https://github.com/direct-dev-project/direct-dev-client/issues",
   "license": "MIT",
   "type": "module",

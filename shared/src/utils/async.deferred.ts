@@ -1,7 +1,7 @@
 export type Deferred<T> = Promise<T> & {
   __isFulfilled(): boolean;
-  __resolve(value: T): void;
-  __reject(reason: unknown): void;
+  __resolve(value: T): Promise<T>;
+  __reject(reason: unknown): Promise<T>;
 };
 
 /**
@@ -13,14 +13,12 @@ export type Deferred<T> = Promise<T> & {
  * result values.
  */
 export function makeDeferred<T>(): Deferred<T> {
-  let __resolve: (value: T) => void;
-  let __reject: (reason: unknown) => void;
+  let __resolve: (value: T) => Promise<T>;
+  let __reject: (reason: unknown) => Promise<T>;
   let __isFulfilled = false;
 
   const promise = new Promise<T>((resolve, reject) => {
     __resolve = (value) => {
-      resolve(value);
-
       __isFulfilled = true;
       __resolve = () => {
         throw new Error("makeDeferred(): cannot resolve a promise that is already resolved");
@@ -28,10 +26,12 @@ export function makeDeferred<T>(): Deferred<T> {
       __reject = () => {
         throw new Error("makeDeferred(): cannot reject a promise that is already resolved");
       };
+
+      resolve(value);
+
+      return promise;
     };
     __reject = (reason: unknown) => {
-      reject(reason);
-
       __isFulfilled = true;
       __resolve = () => {
         throw new Error("makeDeferred(): cannot resolve a promise that is already rejected");
@@ -39,6 +39,10 @@ export function makeDeferred<T>(): Deferred<T> {
       __reject = () => {
         throw new Error("makeDeferred(): cannot reject a promise that is already rejected");
       };
+
+      reject(reason);
+
+      return promise;
     };
   });
 

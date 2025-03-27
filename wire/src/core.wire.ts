@@ -144,7 +144,7 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
    *        it's possible to supply the original encoded string here and reuse
    *        that for maximum hashing performance
    */
-  hash(input: T, encodedStr?: string, ...extraArgs: TExtraEncodeArgs): Promise<string> {
+  async hash(input: T, encodedStr?: string, ...extraArgs: TExtraEncodeArgs): Promise<string> {
     const packerKey = this.#encodeMapper(input, extraArgs);
     if (packerKey === undefined) return sha256(sortObject(input));
 
@@ -174,5 +174,24 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
     }
 
     return packer.decode(input, idEnd);
+  }
+
+  /**
+   * tiny utility to allow extending a Wire, adding extra capabilities to
+   * built-in structures and/or adding new structures to the Wire.
+   */
+  __extend<T2 extends T>(
+    packers: WirePackerCollection<NoInfer<T>, NoInfer<TExtraEncodeArgs>>,
+    mapper?: (input: NoInfer<T | T2>, extraArgs: TExtraEncodeArgs) => string | undefined,
+  ): Wire<T | T2, TExtraEncodeArgs> {
+    return new Wire(
+      {
+        ...this.#packers,
+        ...packers,
+      },
+      mapper
+        ? (input, extraArgs) => mapper(input, extraArgs) ?? this.#encodeMapper(input, extraArgs)
+        : this.#encodeMapper,
+    );
   }
 }

@@ -20,11 +20,11 @@ export type DirectRPCSuccessResponse = {
    * indicates if the response can be cached locally until block height
    * changes.
    */
-  expiresWhenBlockHeightChanges?: boolean;
+  expiresWhenBlockHeightChanges?: boolean | null;
 
   /**
    * indicates if the response can be cached locally until a specific
-   * timestamp in the future (ie. "expires at").
+   * timestamp in the future.
    */
   expiresAt?: string | null;
 };

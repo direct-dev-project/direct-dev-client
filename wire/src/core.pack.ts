@@ -2,7 +2,7 @@
 // mapping of primitive types and their designated charCodes used when decoding
 // union of primitive types
 //
-const types = ["string", "dictionary", "number", "boolean", "null", "undefined"] as const;
+const types = ["string", "dictionary", "number", "int", "boolean", "null", "undefined"] as const;
 
 const typeCharCodes = Object.fromEntries(types.map((type, index) => [type, 33 + index])) as Record<
   (typeof types)[number],
@@ -78,6 +78,18 @@ export const pack = {
   num(input: number): string {
     const str = input.toString();
     return str.length + ":" + str;
+  },
+
+  int(input: number): string {
+    return Math.round(input) + ".";
+  },
+
+  nullableInt(input: number | null | undefined): string {
+    if (input == null) {
+      return input === null ? typeChars.null : typeChars.undefined;
+    }
+
+    return typeChars.int + (input | 0) + ".";
   },
 
   bool(input: boolean): string {
@@ -198,6 +210,26 @@ export const unpack = {
 
     // parse the number by slicing the string based on input length
     return [parseFloat(input.slice(++cursor, cursor + len)), cursor + len];
+  },
+
+  int(input: string, cursor: number): [number, number] {
+    // low-level optimized method to extract the value of the integer, as long
+    // as we're encountering numeric characters (0-9)
+    let int = 0;
+    while (input.charCodeAt(cursor) >= 48 && input.charCodeAt(cursor) <= 57) {
+      int = int * 10 + (input.charCodeAt(cursor) - 48);
+      cursor++;
+    }
+
+    return [int, cursor + 1];
+  },
+
+  nullableInt(input: string, cursor: number): [number | null | undefined, number] {
+    if (input.charCodeAt(cursor) === typeCharCodes.int) {
+      return unpack.int(input, cursor + 1);
+    }
+
+    return [input.charCodeAt(cursor) === typeCharCodes.null ? null : undefined, cursor + 1];
   },
 
   bool(input: string, cursor: number): [boolean, number] {

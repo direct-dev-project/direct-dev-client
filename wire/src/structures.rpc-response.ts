@@ -3,7 +3,7 @@ import type { DirectRPCErrorResponse, DirectRPCSuccessResponse, DirectRPCHead } 
 import { pack, unpack } from "./core.pack.js";
 import { Wire } from "./core.wire.js";
 
-type RPCResponseStructure = DirectRPCSuccessResponse | DirectRPCErrorResponse | DirectRPCHead;
+export type RPCResponseStructure = DirectRPCSuccessResponse | DirectRPCErrorResponse | DirectRPCHead;
 
 /**
  * implementation of WirePackers for common eth response signatures
@@ -272,7 +272,6 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
             case "function":
               return input.result != null ? "rpc_success__json" : "rpc_success__primitive";
           }
-          return "rpc_success";
       }
     }
 

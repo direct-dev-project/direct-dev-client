@@ -16,12 +16,12 @@ export type ClientMetrics = {
  */
 export const clientMetrics = new Wire<ClientMetrics>({
   encode: (input) =>
-    pack.num(input.cacheHitCount) +
-    pack.num(input.inflightHitCount) +
+    pack.int(input.cacheHitCount) +
+    pack.int(input.inflightHitCount) +
     pack.arr(input.samples, (it) => RPCRequest.encode(it)),
   decode: (input, cursor) => {
-    const cacheHitCount = unpack.num(input, cursor);
-    const inflightHitCount = unpack.num(input, cacheHitCount[1]);
+    const cacheHitCount = unpack.int(input, cursor);
+    const inflightHitCount = unpack.int(input, cacheHitCount[1]);
     const samples = unpack.arr(input, inflightHitCount[1], (cursor) => {
       const res = RPCRequest.decode(input, cursor);
 

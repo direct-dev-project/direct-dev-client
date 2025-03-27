@@ -1,4 +1,4 @@
-export type LogLevel = keyof Logger;
+export type LogLevel = Exclude<keyof Logger, "setContext">;
 
 type LoggerConfig = {
   level: LogLevel;
@@ -62,11 +62,31 @@ export class Logger {
   warn: LogFn;
   error: LogFn;
 
+  /**
+   * cache of the original configurations provided to the logger instance
+   */
+  #config: LoggerConfig;
+
   constructor(config: LoggerConfig) {
+    this.#config = config;
+
     this.debug = makeLogFn(config, "debug");
     this.info = makeLogFn(config, "info");
     this.warn = makeLogFn(config, "warn");
     this.error = makeLogFn(config, "error");
+  }
+
+  /**
+   * allows overriding the context applied within the logger during runtime,
+   * useful to add eventual context e.g. in durable objects.
+   */
+  setContext(context: Record<string, string>) {
+    const nextConfig = { ...this.#config, context };
+
+    this.debug = makeLogFn(nextConfig, "debug");
+    this.info = makeLogFn(nextConfig, "info");
+    this.warn = makeLogFn(nextConfig, "warn");
+    this.error = makeLogFn(nextConfig, "error");
   }
 }
 

@@ -39,7 +39,7 @@ export function sortObject(obj: unknown): string {
 
           return a > b ? 1 : -1;
         })
-        .map(([key, value]) => `${key}:${value}`)
+        .map(([key, value]) => `${key}:${sortObject(value)}`)
         .join("|");
   }
 

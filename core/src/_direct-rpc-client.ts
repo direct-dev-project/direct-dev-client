@@ -10,10 +10,10 @@ import type {
 } from "@direct.dev/shared";
 import {
   Logger,
+  PushableAsyncGenerator,
   chunkArray,
   deriveProviderFromNodeUrl,
   deriveProviderFromRequest,
-  makeAsyncGeneratorFromEmitter,
   makeDeferred,
   weightedPick,
 } from "@direct.dev/shared";
@@ -47,6 +47,13 @@ const BASE_BACKOFF_DURATION_MS = 5_000;
 export type DirectRPCClientConfig = {
   projectId: string;
   networkId: string;
+
+  /**
+   * When copy+pasting integration codes from Direct.dev, a signature is
+   * provided which allows your project to cold start faster - this remove
+   * latency on initial requests after periods of inactivity.
+   */
+  signature?: string;
 
   /**
    * Override the baseUrl used when connecting to Direct infrastructure, useful
@@ -90,6 +97,18 @@ export type DirectRPCClientConfig = {
    * @default false
    */
   devMode?: boolean;
+
+  /**
+   * If enabled then the Direct RPC endpoint will respond using an NDJSON
+   * format, which increases response times but improves developer experience.
+   *
+   * It is strongly recommended that this setting is only enabled in
+   * development environments, as it will negatively impact your production
+   * site performance.
+   *
+   * @default false
+   */
+  preferJsonFormat?: boolean;
 
   /**
    * Collection of upstream data provider URLs; we utilize these providers in
@@ -281,11 +300,19 @@ export class DirectRPCClient {
     });
 
     // prepare configurations for handling batches of requests
+    this.#batchWindowMs = config.batchWindowMs ?? 25;
     this.#batchConfig = {
       endpointUrl: `${config.baseUrl ?? "https://rpc.direct.dev"}/v1/${encodeURIComponent(config.projectId)}/${encodeURIComponent(config.networkId)}`,
       isHttps: config.baseUrl ? config.baseUrl.startsWith("https://") : false,
     };
-    this.#batchWindowMs = config.batchWindowMs ?? 25;
+
+    if (config.preferJsonFormat) {
+      this.#batchConfig.endpointUrl += "/ndjson";
+    }
+
+    if (config.signature) {
+      this.#batchConfig.endpointUrl += "?" + config.signature;
+    }
 
     // instantly fetch the initial primer package
     this.#predictivePrimer();
@@ -714,7 +741,10 @@ export class DirectRPCClient {
       }));
     });
 
-    return makeAsyncGeneratorFromEmitter(async (emit) => {
+    const generator = new PushableAsyncGenerator<{
+      done: false;
+      value: DirectRPCSuccessResponse | DirectRPCErrorResponse;
+    }>(async (emit) => {
       await Promise.allSettled(
         chunks.map(async ({ requests, providerId }) => {
           const res = await this.#fetchChunkFromProviders(requests, providerId);
@@ -725,6 +755,8 @@ export class DirectRPCClient {
         }),
       );
     });
+
+    return generator;
   }
 
   /**

@@ -3,7 +3,7 @@ import type { DirectRPCRequest } from "@direct.dev/shared";
 import { pack, unpack } from "./core.pack.js";
 import { Wire } from "./core.wire.js";
 
-type RPCRequestStructure = DirectRPCRequest & {
+export type RPCRequestStructure = DirectRPCRequest & {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   params?: any;
 
@@ -169,5 +169,12 @@ export function hashRPCRequest(
   req: Omit<RPCRequestStructure, "id"> & { id?: string | number },
   encodedStr?: string,
 ): Promise<string> {
-  return RPCRequest.hash({ ...req, id: "" }, encodedStr);
+  if (encodedStr !== undefined) {
+    return RPCRequest.hash(
+      { ...req, id: "" },
+      encodedStr.charAt(0) + pack.str("") + encodedStr.slice(unpack.strOrNum(encodedStr, 1)[1]),
+    );
+  }
+
+  return RPCRequest.hash({ ...req, id: "" });
 }

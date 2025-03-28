@@ -26,8 +26,8 @@
     "dev:typescript": "tsc --watch --preserveWatchOutput",
     "dev:rollup": "rollup -c rollup.config.js --watch",
     "build": "rollup -c rollup.config.js",
-    "build:typescript": "tsc -p tsconfig.json && echo 'MADS TESTER!'",
-    "client:publish": "npm publish --access public"
+    "build:typescript": "tsc -p tsconfig.json",
+    "prepublishOnly": "rm -rf lib/ && pnpm run build && pnpm run build:typescript"
   },
   "dependencies": {
     "@direct.dev/shared": "workspace:*",

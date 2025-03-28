@@ -1,5 +1,13 @@
 # @direct.dev/wire
 
+## 0.1.1
+
+### Patch Changes
+
+- 37c8316: clean up README.md
+- Updated dependencies [37c8316]
+  - @direct.dev/shared@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes

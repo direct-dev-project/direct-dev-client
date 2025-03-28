@@ -39,7 +39,7 @@
     "release:client": "npm publish --access public"
   },
   "dependencies": {
-    "@direct.dev/client": "0.1.3",
+    "@direct.dev/client": "workspace:*",
     "web3-errors": ">=1.0.0",
     "web3-types": ">=1.0.0"
   },

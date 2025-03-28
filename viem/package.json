@@ -39,7 +39,7 @@
   },
   "dependencies": {
     "@direct.dev/client": "0.1.0",
-    "viem": "^2.23.10"
+    "viem": ">=2.0.0"
   },
   "devDependencies": {
     "@direct.dev/tooling-eslint-config": "*",

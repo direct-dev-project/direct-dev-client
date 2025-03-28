@@ -1,4 +1,5 @@
 import type { Chain, PublicClient } from "viem";
+// eslint-disable-next-line import-x/no-extraneous-dependencies
 import { createPublicClient, custom, RpcRequestError } from "viem";
 
 import { DirectRPCClient, type DirectRPCClientConfig } from "@direct.dev/client";

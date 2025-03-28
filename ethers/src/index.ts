@@ -1,4 +1,5 @@
 import type { JsonRpcPayload, JsonRpcResult, Networkish } from "ethers";
+// eslint-disable-next-line import-x/no-extraneous-dependencies
 import { JsonRpcProvider } from "ethers";
 
 import type { DirectRPCClientConfig } from "@direct.dev/client";

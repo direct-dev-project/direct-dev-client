@@ -16,9 +16,6 @@ export type RPCRequestStructure = DirectRPCRequest & {
 
 /**
  * implementation of WirePackers for common eth request signatures
- *
- * @todo (Mads, 20-03-2025): finalize implementations for frequently used
- *       requests
  */
 export const RPCRequest = new Wire<RPCRequestStructure>(
   {

@@ -1,5 +1,12 @@
 # @direct.dev/wire
 
+## 0.1.3
+
+### Patch Changes
+
+- 86f6740: minor adjustments to README.md files
+  - @direct.dev/shared@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes

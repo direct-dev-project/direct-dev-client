@@ -26,7 +26,7 @@
     "dev:typescript": "tsc --watch --preserveWatchOutput",
     "dev:rollup": "rollup -c rollup.config.js --watch",
     "build": "rollup -c rollup.config.js",
-    "build:typescript": "tsc -p tsconfig.json",
+    "build:typescript": "tsc -p tsconfig.json && echo 'MADS TESTER!'",
     "release:client": "npm publish --access public"
   },
   "dependencies": {
@@ -34,9 +34,9 @@
     "@direct.dev/wire": "0.1.1"
   },
   "devDependencies": {
-    "@direct.dev/tooling-eslint-config": "*",
-    "@direct.dev/tooling-rollup-config": "*",
-    "@direct.dev/tooling-typescript-config": "*",
-    "@direct.dev/tooling-vitest-config": "*"
+    "@direct.dev/tooling-eslint-config": "workspace:*",
+    "@direct.dev/tooling-rollup-config": "workspace:*",
+    "@direct.dev/tooling-typescript-config": "workspace:*",
+    "@direct.dev/tooling-vitest-config": "workspace:*"
   }
 }

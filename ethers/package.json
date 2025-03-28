@@ -7,12 +7,22 @@
   },
   "bugs": "https://github.com/direct-dev-project/direct-dev-client/issues",
   "license": "MIT",
+  "keywords": [
+    "ethers",
+    "ethersjs",
+    "eth",
+    "ethereum",
+    "dapps",
+    "web3",
+    "typescript"
+  ],
   "type": "module",
   "files": [
     "src/**/*",
     "lib/**/*"
   ],
   "sideEffects": false,
+  "main": "./lib/index.js",
   "exports": {
     ".": {
       "types": "./lib/index.d.ts",
@@ -26,7 +36,7 @@
     "dev:rollup": "rollup -c rollup.config.js --watch",
     "build": "rollup -c rollup.config.js",
     "build:typescript": "tsc -p tsconfig.json",
-    "release:client": "npm publish"
+    "release:client": "npm publish --access public"
   },
   "dependencies": {
     "@direct.dev/client": "0.1.0",

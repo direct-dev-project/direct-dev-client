@@ -6,13 +6,13 @@ import { DirectRPCBatch } from "./batch.core.js";
  * streaming of responses as they become available.
  */
 export class DirectRPCFetchBatch extends DirectRPCBatch {
-  async fetch() {
+  protected async fetch() {
     //
     // STEP: transform the content of the batch stream into a singular string
     // that can be submitted in one go
     //
     const textDecoder = new TextDecoder();
-    const reader = this.wireStream.getReader();
+    const reader = this.bodyStream.getReader();
 
     let reqBody = "";
     let result: ReadableStreamReadResult<Uint8Array> | undefined;

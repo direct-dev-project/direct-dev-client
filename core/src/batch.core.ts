@@ -5,6 +5,7 @@ import type {
   DirectRPCSuccessResponse,
   Logger,
 } from "@direct.dev/shared";
+import { makeGeneratorFromNDJson, PushableAsyncGenerator } from "@direct.dev/shared";
 import { WireDecodeStream, wire, WireEncodeStream } from "@direct.dev/wire";
 
 export type BatchConfig = {
@@ -13,6 +14,14 @@ export type BatchConfig = {
    * to.
    */
   endpointUrl: string;
+
+  /**
+   * if enabled, then data will be transmitted to Direct.dev using NDJSON
+   * rather than Wire
+   *
+   * @default false
+   */
+  preferJSON: boolean | undefined;
 };
 
 /**
@@ -37,48 +46,91 @@ export abstract class DirectRPCBatch {
   /**
    * reference to the configuration given when creating the batch
    */
-  config: BatchConfig;
+  protected config: BatchConfig;
 
   /**
    * reference to the logger instance provided when creating this batch
    */
-  logger: Logger;
+  protected logger: Logger;
 
   /**
-   * internal reference to the Wire stream created to auto-encode RPC requests
-   * for blazingly fast transmission
+   * internal reference to the request body stream, which requests are written
+   * to during the batch window to allow transmitting data in duplex.
    */
-  wireStream = new WireEncodeStream();
+  protected bodyStream: ReadableStream;
 
   /**
    * the current number of requests that have been pushed to the upload stream.
    */
-  requests: DirectRPCRequest[] = [];
+  #requests = new PushableAsyncGenerator<DirectRPCRequest>();
 
   constructor(config: BatchConfig, logger: Logger) {
     this.logger = logger;
-    this.wireStream = new WireEncodeStream();
+
+    if (!config.preferJSON) {
+      // by default we use a WireStream and encode content using the
+      // appropriate Wire packers
+      this.bodyStream = new WireEncodeStream(async (push) => {
+        let result: IteratorResult<DirectRPCRequest, wire.ClientMetrics>;
+
+        while ((result = await this.#requests.next()).value) {
+          if (result.done) {
+            return wire.clientMetrics.encode(result.value);
+          }
+
+          push(wire.RPCRequest.encode(result.value));
+        }
+      });
+    } else {
+      // if we're using NDJSON, then create a plain NDJSON stream and manually
+      // encode requests as they are being pushed to the batch
+      const encoder = new TextEncoder();
+
+      this.bodyStream = new ReadableStream({
+        start: async (controller) => {
+          for await (const request of this.#requests) {
+            controller.enqueue(encoder.encode(JSON.stringify(request) + "\n"));
+          }
+
+          controller.close();
+        },
+      });
+    }
 
     this.config = config;
+  }
+
+  /**
+   * indicates the current number of requests pushed onto this batch
+   */
+  get size(): number {
+    return this.#requests.size;
+  }
+
+  /**
+   * retrives the array of requests currently pushed onto this batch.
+   *
+   * @note this returns a snapshot of the requests generator at the time of
+   *       calling, it will not reflect values pushed afterwards.
+   */
+  get requests(): Promise<DirectRPCRequest[]> {
+    return this.#requests.toArray(this.#requests.size);
   }
 
   /**
    * add the request to the batch, writing it to the wire stream so that it
    * will be sent to the upstream server as soon as possible.
    */
-  add(req: DirectRPCRequest): void {
-    this.wireStream.push(
-      wire.RPCRequest.encode({
-        ...req,
+  push(req: DirectRPCRequest): void {
+    this.#requests.push({
+      ...req,
 
-        // re-map ids of requests, so that they're equal to the index of the
-        // request in the batch list (this is useful when receiving responses as
-        // it allows us to quickly identify the associated request hash and
-        // resolve the correct inflight promise)
-        id: this.requests.length + 1,
-      }),
-    );
-    this.requests.push(req);
+      // re-map ids of requests, so that they're equal to the index of the
+      // request in the batch list (this is useful when receiving responses as
+      // it allows us to quickly identify the associated request hash and
+      // resolve the correct inflight promise)
+      id: this.#requests.size + 1,
+    });
   }
 
   /**
@@ -92,13 +144,16 @@ export abstract class DirectRPCBatch {
     | undefined
   > {
     try {
-      this.wireStream.close(wire.clientMetrics.encode(metrics));
+      // close the request stream, to ensure that the body stream resolves
+      // correctly
+      this.#requests.close(metrics);
 
       const res = await this.fetch();
+      const resBody = res.body;
 
       // something went wrong in the Direct.dev layer, restore state and
       // perform fail-over
-      if (!res.ok || !res.body) {
+      if (!res.ok || !resBody) {
         this.logger.error(
           "FetchBatch",
           "internal server error occurred (%s %s):\n\n%s",
@@ -110,16 +165,26 @@ export abstract class DirectRPCBatch {
         return undefined;
       }
 
-      return new WireDecodeStream(res.body).getReader((input) => {
-        // slight CPU overhead (~0,01-0,05ms pr. response object), ensuring
-        // that responses decoded through the Wire protocol will have identical
-        // structure to responses decoded through regular JSON
-        //
-        // namely, this ensures that "undefined" optional properties are
-        // omitted in the emitted object, whereas Wire will include them as
-        // undefined values
-        return JSON.parse(JSON.stringify(wire.RPCResponse.decode(input)[0]));
-      });
+      if (!this.config.preferJSON) {
+        // if we're using the default Wire format, then use a WireDecodeStream
+        // to yield values
+        return new WireDecodeStream(resBody).getReader((input) => {
+          // slight CPU overhead (~0,01-0,05ms pr. response object), ensuring
+          // that responses decoded through the Wire protocol will have
+          // identical structure to responses decoded through regular JSON
+          //
+          // namely, this ensures that "undefined" optional properties are
+          // omitted in the emitted object, whereas Wire will include them as
+          // undefined values
+          return JSON.parse(JSON.stringify(wire.RPCResponse.decode(input)[0]));
+        });
+      } else {
+        return (async function* parse() {
+          for await (const value of makeGeneratorFromNDJson(resBody)) {
+            yield { done: false, value: value as DirectRPCHead | DirectRPCSuccessResponse | DirectRPCErrorResponse };
+          }
+        })();
+      }
     } catch (err) {
       this.logger.error("Batch.dispatch", "fetch failed", err);
       return undefined;
@@ -133,5 +198,5 @@ export abstract class DirectRPCBatch {
    * with fetch in supported browsers and non-duplex fallback for other
    * browsers).
    */
-  abstract fetch(): Promise<Response>;
+  protected abstract fetch(): Promise<Response>;
 }

@@ -47,7 +47,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
    */
   readonly #deferred = makeDeferred<undefined>();
 
-  constructor(cb?: (push: (input: string) => void) => Promise<void> | void) {
+  constructor(cb?: (push: (input: string) => void) => Promise<string | null | undefined> | string | null | undefined) {
     // create a ref-object (inspired by React), so we can apply the controller
     // when it's provided in the start method below (which is executed prior to
     // the `super()` call resolving, thus resulting in a ReferenceError
@@ -67,7 +67,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
 
     if (cb !== undefined) {
       Promise.resolve(cb(this.push.bind(this)))
-        .then(() => this.close())
+        .then((res) => this.close(res))
         .catch((err) => {
           this.close();
           throw err;

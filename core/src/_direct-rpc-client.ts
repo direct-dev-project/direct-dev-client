@@ -49,11 +49,11 @@ export type DirectRPCClientConfig = {
   networkId: string;
 
   /**
-   * When copy+pasting integration codes from Direct.dev, a signature is
-   * provided which allows your project to cold start faster - this remove
-   * latency on initial requests after periods of inactivity.
+   * When copy+pasting integration codes from Direct.dev, a token is provided
+   * which allows your project to cold start faster - this removes latency on
+   * initial requests after periods of inactivity.
    */
-  signature?: string;
+  projectToken?: string;
 
   /**
    * Override the baseUrl used when connecting to Direct infrastructure, useful
@@ -108,7 +108,7 @@ export type DirectRPCClientConfig = {
    *
    * @default false
    */
-  preferJsonFormat?: boolean;
+  preferJSON?: boolean;
 
   /**
    * Collection of upstream data provider URLs; we utilize these providers in
@@ -154,6 +154,11 @@ type FetchOutput = DirectRPCSuccessResponse | DirectRPCErrorResponse;
  */
 export class DirectRPCClient {
   #logger: Logger;
+
+  /**
+   * specifies the URL which should be used when connecting to Direct.dev
+   */
+  #endpointUrl: string;
 
   /**
    * specifies if client should bypass Direct.dev infrastructure, as it is
@@ -271,6 +276,7 @@ export class DirectRPCClient {
   #isDestroyed = false;
 
   constructor(config: DirectRPCClientConfig) {
+    this.#endpointUrl = `${config.baseUrl ?? "https://rpc.direct.dev"}/v1/${encodeURIComponent(config.projectToken ? config.projectId + "." + config.projectToken : config.projectId)}/${encodeURIComponent(config.networkId)}`;
     this.#devMode =
       !!config.devMode && (typeof location === "undefined" || !location.search.includes("directdev=true"));
 
@@ -302,17 +308,10 @@ export class DirectRPCClient {
     // prepare configurations for handling batches of requests
     this.#batchWindowMs = config.batchWindowMs ?? 25;
     this.#batchConfig = {
-      endpointUrl: `${config.baseUrl ?? "https://rpc.direct.dev"}/v1/${encodeURIComponent(config.projectId)}/${encodeURIComponent(config.networkId)}`,
+      endpointUrl: this.#endpointUrl + (config.preferJSON ? "/ndjson" : ""),
+      preferJSON: config.preferJSON,
       isHttps: config.baseUrl ? config.baseUrl.startsWith("https://") : false,
     };
-
-    if (config.preferJsonFormat) {
-      this.#batchConfig.endpointUrl += "/ndjson";
-    }
-
-    if (config.signature) {
-      this.#batchConfig.endpointUrl += "?" + config.signature;
-    }
 
     // instantly fetch the initial primer package
     this.#predictivePrimer();
@@ -383,11 +382,7 @@ export class DirectRPCClient {
       if (this.#batchWindowMs < 0) {
         // if batching has been disabled, then dispatch the requests immediately
         this.#dispatchBatch();
-      } else if (
-        this.#batchTimeout === undefined &&
-        this.#currBatch !== undefined &&
-        this.#currBatch.requests.length > 0
-      ) {
+      } else if (this.#batchTimeout === undefined && this.#currBatch !== undefined && this.#currBatch.size > 0) {
         // ... otherwise, if a throttled batch is not currently pending, then
         // dispatch the current request immediately and set a timeout for
         // subsequent requests
@@ -458,7 +453,7 @@ export class DirectRPCClient {
         this.#inflightCache.set(reqHash, promise);
 
         this.#currBatch ??= createBatch(this.#batchConfig, this.#logger);
-        this.#currBatch.add(req);
+        this.#currBatch.push(req);
 
         promise.then(() => {
           this.#inflightCache.delete(reqHash);
@@ -494,7 +489,7 @@ export class DirectRPCClient {
     // push the primer request to the list of pending requests, and then
     // instantly dispatch waiting requests
     this.#currBatch ??= createBatch(this.#batchConfig, this.#logger);
-    this.#currBatch.add(req);
+    this.#currBatch.push(req);
     this.#dispatchBatch();
   }
 
@@ -517,8 +512,10 @@ export class DirectRPCClient {
     // (this is only a temporary meassure, until we are ready to implement
     // predictive prefetching for real)
     if (!this.#currentBlockHeight || this.#currentBlockHeight.expiresAt < new Date()) {
-      if (!currBatch.requests.some((req) => req.method === "direct_primer")) {
-        currBatch.add({
+      const requests = await currBatch.requests;
+
+      if (!requests.some((req) => req.method === "direct_primer")) {
+        currBatch.push({
           id: 0,
           method: "direct_primer",
           params: [normalizeContextFromUrl(typeof window !== "undefined" ? window.location.href : "/")],
@@ -530,7 +527,8 @@ export class DirectRPCClient {
     // request in the batch list (this is useful when receiving responses as
     // it allows us to quickly identify the associated request hash and
     // resolve the correct inflight promise)
-    const requestHashes = await Promise.all(currBatch.requests.map((it) => wire.hashRPCRequest(it)));
+    const requests = await currBatch.requests;
+    const requestHashes = await Promise.all(requests.map((it) => wire.hashRPCRequest(it)));
     const remainingRequestHashes = new Set(requestHashes);
 
     // perform request to upstream, and handle responses by resolving batched
@@ -539,7 +537,7 @@ export class DirectRPCClient {
     const [isDirectRequest, iterator] =
       !backoffMode || backoffMode.endsAt <= Date.now()
         ? await this.#fetchFromDirect(currBatch)
-        : [false, this.#fetchFromProviders(currBatch.requests)];
+        : [false, this.#fetchFromProviders(requests)];
 
     let isDirectHeadPending = isDirectRequest;
 
@@ -692,9 +690,10 @@ export class DirectRPCClient {
     }
 
     // retry the same requests in failover-mode to guarantee
-    this.#logger.debug("#fetchFromDirect", "retrying failed requests from providers", batch.requests);
+    const requests = await batch.requests;
+    this.#logger.debug("#fetchFromDirect", "retrying failed requests from providers", requests);
 
-    return [false, this.#fetchFromProviders(batch.requests)];
+    return [false, this.#fetchFromProviders(requests)];
   }
 
   /**
@@ -899,7 +898,7 @@ export class DirectRPCClient {
       }),
     );
 
-    navigator.sendBeacon(this.#batchConfig.endpointUrl, await new WireDecodeStream(encodeStream).toString());
+    navigator.sendBeacon(this.#endpointUrl, await new WireDecodeStream(encodeStream).toString());
 
     // reset in-memory samples and hope that the beacon goes through for proper
     // collection of metrics

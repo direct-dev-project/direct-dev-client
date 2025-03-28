@@ -65,11 +65,25 @@ export class PushableAsyncGenerator<T, TReturn = any> implements AsyncGenerator<
   /**
    * tiny helper that transforms the generator into an array.
    */
-  async toArray(): Promise<T[]> {
+  async toArray(maxLength?: number): Promise<T[]> {
     const output: T[] = [];
 
-    for await (const entry of this) {
-      output.push(entry);
+    if (maxLength === undefined) {
+      for await (const entry of this) {
+        output.push(entry);
+      }
+    } else {
+      for (let i = 0; i < maxLength; i++) {
+        const nextResult = await (this.#deferred[i] ??= makeDeferred());
+
+        if (nextResult.done) {
+          // we cannot iterate further than the length of the stream, break loop
+          // if generator ends
+          break;
+        }
+
+        output.push(nextResult.value);
+      }
     }
 
     return output;

@@ -19,7 +19,7 @@ export class DirectRPCDuplexFetchBatch extends DirectRPCBatch {
 
     this.#res = fetch(this.config.endpointUrl, {
       method: "POST",
-      body: this.wireStream,
+      body: this.bodyStream,
 
       // @ts-expect-error: TypeScript doesn't include support for duplex in
       // fetch API yet
@@ -30,7 +30,7 @@ export class DirectRPCDuplexFetchBatch extends DirectRPCBatch {
   /**
    * simply return the request we opened when the batch was created
    */
-  async fetch() {
+  protected async fetch() {
     return this.#res;
   }
 }

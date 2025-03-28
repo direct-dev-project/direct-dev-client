@@ -1,5 +1,12 @@
 # @direct.dev/ethers
 
+## 0.1.2
+
+### Patch Changes
+
+- e531dd2: use peerDependencies for external dependencies
+  - @direct.dev/client@0.1.2
+
 ## 0.1.1
 
 ### Patch Changes

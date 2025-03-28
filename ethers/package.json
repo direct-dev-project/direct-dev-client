@@ -1,6 +1,6 @@
 {
   "name": "@direct.dev/ethers",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/direct-dev-project/direct-dev-client.git"
@@ -39,7 +39,7 @@
     "release:client": "npm publish --access public"
   },
   "dependencies": {
-    "@direct.dev/client": "0.1.1"
+    "@direct.dev/client": "0.1.2"
   },
   "peerDependencies": {
     "ethers": ">=6.9.0"

@@ -1,5 +1,14 @@
 # @direct.dev/viem
 
+## 0.1.2
+
+### Patch Changes
+
+- 4d94acf: increase contrast on badges in README.md
+- e531dd2: use peerDependencies for external dependencies
+  - @direct.dev/client@0.1.2
+  - @direct.dev/shared@0.1.2
+
 ## 0.1.1
 
 ### Patch Changes

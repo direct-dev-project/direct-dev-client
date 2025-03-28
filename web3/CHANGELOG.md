@@ -1,5 +1,12 @@
 # @direct.dev/web3
 
+## 0.1.2
+
+### Patch Changes
+
+- 4d94acf: increase contrast on badges in README.md
+  - @direct.dev/client@0.1.2
+
 ## 0.1.1
 
 ### Patch Changes

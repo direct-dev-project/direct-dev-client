@@ -1,5 +1,13 @@
 # @direct.dev/client
 
+## 0.1.2
+
+### Patch Changes
+
+- Updated dependencies [4d94acf]
+  - @direct.dev/wire@0.1.2
+  - @direct.dev/shared@0.1.2
+
 ## 0.1.1
 
 ### Patch Changes

@@ -38,7 +38,9 @@
     "release:client": "npm publish --access public"
   },
   "dependencies": {
-    "@direct.dev/client": "0.1.0",
+    "@direct.dev/client": "0.1.0"
+  },
+  "peerDependencies": {
     "viem": ">=2.0.0"
   },
   "devDependencies": {

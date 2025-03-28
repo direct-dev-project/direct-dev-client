@@ -39,7 +39,9 @@
     "release:client": "npm publish --access public"
   },
   "dependencies": {
-    "@direct.dev/client": "0.1.0",
+    "@direct.dev/client": "0.1.0"
+  },
+  "peerDependencies": {
     "ethers": ">=6.0.0"
   },
   "devDependencies": {

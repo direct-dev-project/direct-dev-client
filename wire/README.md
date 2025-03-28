@@ -1,6 +1,6 @@
 # @direct.dev/wire
 
-Hyper-optimized encoding and decoding utilities for the Direct.dev ecosystem, optimized for minimal payload sizes and maximum performance for high-throughput Web3 JSON-RPC calls in our multi-tiered infrastructure.
+Hyper-optimized encoding and decoding utilities for the Direct.dev ecosystem, written for minimal payload sizes and maximum performance for high-throughput Web3 JSON-RPC calls in our multi-tiered infrastructure.
 
 ## ‼️ Internal Use Only
 

@@ -1,6 +1,6 @@
 # @direct.dev/client
 
-The `@direct.dev/client` package provides the low-level `DirectRPCClient` class, which manages communication with Direct.dev endpoints. It handles request batching, caching, failover management, and predictive prefetching.
+Provides the low-level `DirectRPCClient` class, which manages communication with Direct.dev endpoints. It handles request batching, caching, failover management, and predictive prefetching.
 
 ## ‼️ Internal Use Only
 

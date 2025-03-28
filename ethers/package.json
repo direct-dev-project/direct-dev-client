@@ -1,5 +1,6 @@
 {
   "name": "@direct.dev/ethers",
+  "description": "Ethers provider for Direct.dev, optimizing performance and enhancing reliability.",
   "version": "0.1.2",
   "repository": {
     "type": "git",

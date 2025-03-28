@@ -1,5 +1,6 @@
 {
   "name": "@direct.dev/web3",
+  "description": "Web3.js provider for Direct.dev, optimizing performance and enhancing reliability.",
   "version": "0.1.2",
   "repository": {
     "type": "git",

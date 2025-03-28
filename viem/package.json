@@ -1,5 +1,6 @@
 {
   "name": "@direct.dev/viem",
+  "description": "Viem client for Direct.dev, optimizing performance and enhancing reliability.",
   "version": "0.1.2",
   "repository": {
     "type": "git",

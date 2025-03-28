@@ -29,11 +29,11 @@ An `ethers`-compatible provider that integrates with the [Direct.dev](https://di
 ## Installation
 
 ```sh
-npm install @direct.dev/viem
+npm install @direct.dev/ethers ethers
 # or
-yarn add @direct.dev/viem
+yarn add @direct.dev/ethers ethers
 # or
-pnpm add @direct.dev/viem
+pnpm add @direct.dev/ethers ethers
 ```
 
 ## Usage
@@ -45,7 +45,7 @@ import { DirectEthersProvider } from "@direct.dev/ethers";
 // Initialize the Direct.dev provider
 const provider = new DirectEthersProvider({
   projectId: "your-project-id", // From the Direct.dev dashboard
-  projectToken: "*****", // From the Direct.dev dashboard
+  projectToken: "************", // From the Direct.dev dashboard
   networkId: "your-network-id", // e.g. "ethereum", "polygon"
   providers: ["https://your-provider-endpoints.com/"],
 });

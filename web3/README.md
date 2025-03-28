@@ -29,11 +29,11 @@ A `web3.js`-compatible provider that integrates with the [Direct.dev](https://di
 ## Installation
 
 ```sh
-npm install @direct.dev/web3
+npm install @direct.dev/web3 web3
 # or
-yarn add @direct.dev/web3
+yarn add @direct.dev/web3 web3
 # or
-pnpm add @direct.dev/web3
+pnpm add @direct.dev/web3 web3
 ```
 
 ## Usage
@@ -46,7 +46,7 @@ import { DirectWeb3Provider } from "@direct.dev/web3";
 // Initialize the Direct.dev provider
 const provider = new DirectWeb3Provider({
   projectId: "your-project-id", // From the Direct.dev dashboard
-  projectToken: "*****", // From the Direct.dev dashboard
+  projectToken: "************", // From the Direct.dev dashboard
   networkId: "your-network-id", // e.g. "ethereum", "polygon"
   providers: ["https://your-provider-endpoint.com/"],
 });

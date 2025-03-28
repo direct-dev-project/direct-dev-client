@@ -29,11 +29,11 @@ A `viem`-compatible client that integrates with the [Direct.dev](https://direct.
 ## Installation
 
 ```sh
-npm install @direct.dev/viem
+npm install @direct.dev/viem viem
 # or
-yarn add @direct.dev/viem
+yarn add @direct.dev/viem viem
 # or
-pnpm add @direct.dev/viem
+pnpm add @direct.dev/viem viem
 ```
 
 ## Usage
@@ -45,7 +45,7 @@ import { createDirectViemClient } from "@direct.dev/viem";
 // Initialize the Direct.dev client
 const client = createDirectViemClient({
   projectId: "your-project-id", // From the Direct.dev dashboard
-  projectToken: "*****", // From the Direct.dev dashboard
+  projectToken: "************", // From the Direct.dev dashboard
   networkId: "your-network-id", // e.g. "ethereum", "polygon"
   providers: ["https://your-provider-endpoints.com/"],
 });

@@ -30,7 +30,7 @@
     "release:client": "npm publish --access public"
   },
   "dependencies": {
-    "@direct.dev/shared": "0.1.0"
+    "@direct.dev/shared": "0.1.1"
   },
   "devDependencies": {
     "@direct.dev/tooling-eslint-config": "*",

@@ -11,9 +11,9 @@
   </p>
 
   <p>
-    <a href="https://www.npmjs.com/package/@direct.dev/ethers"><img alt="NPM Version" src="https://img.shields.io/npm/v/%40direct.dev%2Fethers?style=for-the-badge&labelColor=555&color=12CBC0"></a>
-    <a href="https://bundlephobia.com/package/@direct.dev/ethers"><img alt="NPM Bundle size" src="https://img.shields.io/bundlephobia/min/%40direct.dev%2Fethers?style=for-the-badge&labelColor=555&color=12CBC0"></a>
-    <a href="https://github.com/direct-dev-project/direct-dev-client/blob/main/LICENSE"><img alt="NPM License" src="https://img.shields.io/npm/l/%40direct.dev%2Fethers?style=for-the-badge&labelColor=555&color=12CBC0"></a>
+    <a href="https://www.npmjs.com/package/@direct.dev/ethers"><img alt="NPM Version" src="https://img.shields.io/npm/v/%40direct.dev%2Fethers?style=for-the-badge&labelColor=555&color=00BCB1"></a>
+    <a href="https://bundlephobia.com/package/@direct.dev/ethers"><img alt="NPM Bundle size" src="https://img.shields.io/bundlephobia/min/%40direct.dev%2Fethers?style=for-the-badge&labelColor=555&color=00BCB1"></a>
+    <a href="https://github.com/direct-dev-project/direct-dev-client/blob/main/LICENSE"><img alt="NPM License" src="https://img.shields.io/npm/l/%40direct.dev%2Fethers?style=for-the-badge&labelColor=555&color=00BCB1"></a>
   </p>
 </div>
 

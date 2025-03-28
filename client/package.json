@@ -27,7 +27,7 @@
     "dev:rollup": "rollup -c rollup.config.js --watch",
     "build": "rollup -c rollup.config.js",
     "build:typescript": "tsc -p tsconfig.json && echo 'MADS TESTER!'",
-    "release:client": "npm publish --access public"
+    "client:publish": "npm publish --access public"
   },
   "dependencies": {
     "@direct.dev/shared": "workspace:*",

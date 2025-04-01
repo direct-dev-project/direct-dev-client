@@ -25,6 +25,30 @@ export type WireStreamEntry<T, TDone = null> =
  */
 export class WireEncodeStream extends ReadableStream<Uint8Array> {
   /**
+   * utility to transform an in-memory array of encoded content into a
+   * stringified WireEncodeStream that can be handled without the need for a
+   * streaming interface.
+   */
+  public static fromArray<T>(input: T[], encoder: (item: T) => string): string {
+    let result = "";
+
+    // push individual items to the result stream
+    for (const item of input) {
+      result += "0" + pack.str(encoder(item));
+    }
+
+    // close the stream
+    return result + "2";
+  }
+
+  /**
+   * contains the approximated current size of the stream, so that integrations
+   * can prevent pushing too much data to a non-consumed stream (relevant in
+   * cases where entries are aggregated over longer periods of time).
+   */
+  #sizeInBytes = 1;
+
+  /**
    * cached reference to the ReadableStream controller, which allows us to push
    * entries on-demand further down this stream integration.
    */
@@ -46,6 +70,14 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
    * closed, supporting the `wait()` call below.
    */
   readonly #deferred = makeDeferred<undefined>();
+
+  /**
+   * provides an estimate of the combined size of all entries currently pushed
+   * to the stream
+   */
+  get sizeInBytes(): number {
+    return this.#sizeInBytes;
+  }
 
   constructor(cb?: (push: (input: string) => void) => Promise<string | null | undefined> | string | null | undefined) {
     // create a ref-object (inspired by React), so we can apply the controller
@@ -80,6 +112,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
    */
   push(input: string): void {
     this.#controllerRef.current?.enqueue(this.#textEncoder.encode("0" + pack.str(input)));
+    this.#sizeInBytes += input.length + 1;
   }
 
   /**
@@ -89,6 +122,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
   close(input?: string | null): void {
     this.#controllerRef.current?.enqueue(this.#textEncoder.encode(input != null ? "1" + pack.str(input) : "2"));
     this.#controllerRef.current?.close();
+    this.#sizeInBytes += input != null ? input.length + 1 : 1;
 
     this.#deferred.__resolve(undefined);
   }
@@ -116,7 +150,7 @@ export class WireDecodeStream {
     input: string,
     transformEntry: (input: string, version: number) => Promise<T> | T = (input) => input as T,
     transformDone: (input: string, version: number) => Promise<TDone> | TDone = (input) => input as TDone,
-  ): AsyncGenerator<WireStreamEntry<T, TDone>> {
+  ): PushableAsyncGenerator<WireStreamEntry<T, TDone>> {
     const wireVersion = input.charCodeAt(0) - 48;
 
     return new PushableAsyncGenerator(async (push) => {

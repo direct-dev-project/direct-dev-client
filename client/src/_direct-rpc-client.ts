@@ -7,6 +7,7 @@ import type {
   LogLevel,
   RPCRequestHash,
   DirectRPCHead,
+  SupportedNetworkId,
 } from "@direct.dev/shared";
 import {
   Logger,
@@ -46,7 +47,7 @@ const BASE_BACKOFF_DURATION_MS = 5_000;
  */
 export type DirectRPCClientConfig = {
   projectId: string;
-  networkId: string;
+  networkId: SupportedNetworkId;
 
   /**
    * When copy+pasting integration codes from Direct.dev, a token is provided
@@ -149,6 +150,46 @@ type FetchInput = DirectRPCRequest & { jsonrpc: string };
 type FetchOutput = DirectRPCSuccessResponse | DirectRPCErrorResponse;
 
 /**
+ * configuration of provider upstream nodes, which are used when bypassing
+ * Direct.dev infrastructure while running requests.
+ */
+type ProviderNode = {
+  url: string;
+
+  /**
+   * specifies which RPC provider who owns this specific node; used when we
+   * need to ensure correctness on provider proprietary rpc method calls.
+   */
+  providerId: SupportedProviderId | undefined;
+
+  /**
+   * weighting of the usage of this provider node, reflecting configurations
+   * applied when copy+pasting embed code from the Dashboard.
+   */
+  weighting: number;
+
+  /**
+   * additional HTTP headers to inject into calls made to this node from the
+   * browser.
+   */
+  httpHeaders?: Record<string, string>;
+};
+
+type NodeBackoffState = {
+  /**
+   * timestamp (Date.now()) for when the backoff ends (ie. after this point,
+   * the client can retry requests against the specified node again)
+   */
+  endsAt: number;
+
+  /**
+   * the number of consecutive failures observed while requesting data from
+   * this node
+   */
+  failureCount: number;
+};
+
+/**
  * Core client used to perform RPC requests from client to the Direct.dev
  * infrastructure
  */
@@ -181,41 +222,22 @@ export class DirectRPCClient {
    * cache of the list of provider nodes, used to perform fail-over handling in
    * cases Direct.dev infrastructure is down.
    */
-  #providerNodes: ReadonlyArray<{
-    url: string;
-
-    /**
-     * specifies which RPC provider who owns this specific node; used when we
-     * need to ensure correctness on provider proprietary rpc method calls.
-     */
-    providerId: SupportedProviderId | undefined;
-
-    /**
-     * weighting of the usage of this provider node, reflecting configurations
-     * applied when copy+pasting embed code from the Dashboard.
-     */
-    weighting: number;
-
-    /**
-     * additional HTTP headers to inject into calls made to this node from the
-     * browser.
-     */
-    httpHeaders?: Record<string, string>;
-  }>;
+  #providerNodes: readonly ProviderNode[];
 
   /**
-   * mapping of back-off configurations for Direct.dev infrastructure itself,
-   * as well as any direct provider-node integrations; if present, these
-   * endpoints will not be used when performing new requests.
+   * configuration of Direct.dev infrastructure backoff state, which is enabled
+   * when rpc.direct.dev is down. While enabled, all requests will bypass
+   * Direct.dev to be able to eliminate all single-points-of-failure within the
+   * call stack.
    */
-  #backoffMode: Record<
-    "direct.dev" | string,
-    | {
-        failureCount: number;
-        endsAt: number;
-      }
-    | undefined
-  > = {};
+  #directDevBackoff: NodeBackoffState | undefined;
+
+  /**
+   * mapping of backoff-state for available provider nodes, so we can ensure
+   * that requests are not run against providers that are known to experience
+   * service issues currently.
+   */
+  #providerBackoff = new Map<ProviderNode, NodeBackoffState>();
 
   /**
    * in-memory cache of currently known block height, which is used to verify
@@ -284,13 +306,13 @@ export class DirectRPCClient {
     this.#providerNodes = config.providers.map((it) =>
       Array.isArray(it)
         ? Object.freeze({
-            providerId: deriveProviderFromNodeUrl(it[0]),
+            providerId: deriveProviderFromNodeUrl(config.networkId, it[0]),
             url: it[0],
             httpHeaders: it[1],
             weighting: 1,
           })
         : Object.freeze({
-            providerId: deriveProviderFromNodeUrl(it),
+            providerId: deriveProviderFromNodeUrl(config.networkId, it),
             url: it,
             weighting: 1,
           }),
@@ -533,9 +555,8 @@ export class DirectRPCClient {
 
     // perform request to upstream, and handle responses by resolving batched
     // entries
-    const backoffMode = this.#backoffMode["direct.dev"];
     const [isDirectRequest, iterator] =
-      !backoffMode || backoffMode.endsAt <= Date.now()
+      !this.#directDevBackoff || this.#directDevBackoff.endsAt <= Date.now()
         ? await this.#fetchFromDirect(currBatch)
         : [false, this.#fetchFromProviders(requests)];
 
@@ -656,7 +677,7 @@ export class DirectRPCClient {
     if (response) {
       // if things went OK, then reset any previously known backoff-settings
       // and continue operations as usual from here
-      this.#backoffMode["direct.dev"] = undefined;
+      this.#directDevBackoff = undefined;
 
       return [true, response];
     }
@@ -676,17 +697,16 @@ export class DirectRPCClient {
 
     // register the error internally, so we can perform exponential backoff
     // if we're not already in a backoff-period
-    const backoffMode = this.#backoffMode["direct.dev"];
 
-    if (!backoffMode || backoffMode.endsAt < now) {
-      const prevFailureCount = backoffMode?.failureCount ?? 0;
+    if (!this.#directDevBackoff || this.#directDevBackoff.endsAt < now) {
+      const prevFailureCount = this.#directDevBackoff?.failureCount ?? 0;
 
-      this.#backoffMode["direct.dev"] = {
+      this.#directDevBackoff = {
         failureCount: prevFailureCount + 1,
         endsAt: now + 2 ** Math.min(8, prevFailureCount) * BASE_BACKOFF_DURATION_MS,
       };
 
-      this.#logger.debug("#fetchFromDirect", "backing off until", new Date(this.#backoffMode["direct.dev"].endsAt));
+      this.#logger.debug("#fetchFromDirect", "backing off until", new Date(this.#directDevBackoff.endsAt));
     }
 
     // retry the same requests in failover-mode to guarantee
@@ -777,13 +797,38 @@ export class DirectRPCClient {
     // grab a list of provider nodes, which are not currently under
     // exponential back-off
     const availableNodes = (() => {
-      const filteredNodes = providerNodes.filter((it) => {
-        const backoffMode = this.#backoffMode[it.url];
+      const excludedNodes = Array.from(this.#providerBackoff.entries())
+        .filter(([, backoff]) => backoff.endsAt < Date.now())
+        .map(([node]) => node);
 
-        return !backoffMode || backoffMode.endsAt < Date.now();
-      });
+      if (!excludedNodes.length) {
+        return providerNodes;
+      }
 
-      return filteredNodes.length > 0 ? filteredNodes : providerNodes;
+      // if we need to exclude specific nodes, start by trying to find
+      // another node that's associated with a completely different provider
+      if (providerId == null) {
+        const otherProviderNodes = providerNodes.filter(
+          (node) => !excludedNodes.some((excludedNode) => node.providerId !== excludedNode.providerId),
+        );
+
+        if (otherProviderNodes.length > 0) {
+          return otherProviderNodes;
+        }
+      }
+
+      // ... otherwise attempt to find any other node than the excluded one
+      const otherNodes = providerNodes.filter((node) =>
+        excludedNodes.some((excludedNode) => node.url !== excludedNode.url),
+      );
+
+      if (otherNodes.length > 0) {
+        return otherNodes;
+      }
+
+      // ... finally if no other nodes exist, retry against the same node
+      // again
+      return providerNodes;
     })();
 
     const node = weightedPick(availableNodes);
@@ -818,7 +863,7 @@ export class DirectRPCClient {
 
       // if we get here, things went OK, reset any previous backoff data and
       // continue operations as usual through the Direct.dev infrastructure
-      this.#backoffMode[node.url] = undefined;
+      this.#providerBackoff.delete(node);
 
       return responses;
     } catch (err) {
@@ -835,15 +880,15 @@ export class DirectRPCClient {
       // if we get here, something went wrong - bump exponential backoff if
       // this node is not already in backoff mode
       const now = Date.now();
-      const backoffMode = this.#backoffMode[node.url];
+      const backoffMode = this.#providerBackoff.get(node);
 
       if (!backoffMode || backoffMode.endsAt < now) {
         const prevFailureCount = backoffMode?.failureCount ?? 0;
 
-        this.#backoffMode[node.url] = {
+        this.#providerBackoff.set(node, {
           failureCount: prevFailureCount + 1,
           endsAt: now + 2 ** Math.min(8, prevFailureCount) * BASE_BACKOFF_DURATION_MS,
-        };
+        });
       }
 
       // retry the request, routing it through one of the other supplied

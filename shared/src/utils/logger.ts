@@ -97,7 +97,7 @@ function makeLogFn(config: LoggerConfig, level: LogLevel): LogFn {
     };
   }
 
-  const levelPrefix = `[${config.level.toUpperCase()}]`;
+  const levelPrefix = `[${level.toUpperCase()}]`;
   const prefix = config.prefix ? `${levelPrefix} ${config.prefix}` : levelPrefix;
 
   if (config.context) {

@@ -33,7 +33,6 @@ export const clientMetrics = new Wire<ClientMetrics>({
         res[1],
       ] as const;
     });
-    const nextCursor = samples[1];
 
     return [
       {
@@ -41,7 +40,7 @@ export const clientMetrics = new Wire<ClientMetrics>({
         inflightHitCount: inflightHitCount[0],
         samples: samples[0],
       },
-      nextCursor,
+      samples[1],
     ];
   },
 });

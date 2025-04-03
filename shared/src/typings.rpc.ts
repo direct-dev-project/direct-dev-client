@@ -26,7 +26,7 @@ export type DirectRPCSuccessResponse = {
    * indicates if the response can be cached locally until a specific
    * timestamp in the future.
    */
-  expiresAt?: string | null;
+  expiresAt?: Date | null;
 };
 
 /**
@@ -65,7 +65,7 @@ export type DirectRPCHead = {
    * the client know for how long it can return responses that are tied to this
    * block.
    */
-  blockHeightExpiresAt?: string | null;
+  blockHeightExpiresAt?: Date | null;
 };
 
 /**

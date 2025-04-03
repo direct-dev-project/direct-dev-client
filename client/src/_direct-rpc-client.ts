@@ -596,7 +596,7 @@ export class DirectRPCClient {
           response.blockHeight && response.blockHeightExpiresAt
             ? {
                 value: response.blockHeight,
-                expiresAt: new Date(response.blockHeightExpiresAt),
+                expiresAt: response.blockHeightExpiresAt,
               }
             : undefined;
 
@@ -620,7 +620,19 @@ export class DirectRPCClient {
       }
 
       remainingRequestHashes.delete(reqHash);
-      this.#inflightCache.get(reqHash)?.__resolve(response);
+
+      // slight CPU overhead (~0,01-0,05ms pr. response object), ensuring
+      // that responses decoded through the Wire protocol will have
+      // identical structure to responses decoded through regular JSON
+      //
+      // namely, this ensures that "undefined" optional properties are
+      // omitted in the emitted object, whereas Wire will include them as
+      // undefined values
+      const output = JSON.parse(
+        JSON.stringify({ ...response, expiresWhenBlockHeightChanges: undefined, expiresAt: undefined }),
+      );
+
+      this.#inflightCache.get(reqHash)?.__resolve(output);
 
       if (
         reqHash &&
@@ -628,7 +640,7 @@ export class DirectRPCClient {
         this.#currentBlockHeight
       ) {
         this.#requestCache.set(reqHash, {
-          value: response,
+          value: output,
           expiration: {
             whenBlockHeightChanges: response.expiresWhenBlockHeightChanges ?? false,
             expiresAt: response.expiresAt ? new Date(response.expiresAt) : undefined,

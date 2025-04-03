@@ -1,8 +1,8 @@
-import { pack, unpack } from "./core.pack.js";
+import { pack, unpack, WIRE_ENCODE_OFFSET } from "./core.pack.js";
 import { sha256 } from "./hashing.sha256.js";
 import { sortObject } from "./hashing.sort-object.js";
 
-type PackerId = string;
+type PackerId = number;
 
 /**
  * A packer is a set of encoder/decoder methods, which should be implemented in
@@ -43,17 +43,7 @@ type WirePackerCollection<T, TExtraEncodeArgs extends any[]> = Record<string, Wi
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export class Wire<T, TExtraEncodeArgs extends any[] = []> {
-  /**
-   * the collection of packers available within this instance, allowing
-   * blazingly fast encoding/decoding of these content structures
-   */
   #packers: WirePackerCollection<T, TExtraEncodeArgs>;
-
-  /**
-   * the length of structure IDs, used to quickly infer type of well-known
-   * structures while decoding.
-   */
-  #idLength: number;
 
   /**
    * utility method provided when instantiating the Wire, which determines
@@ -62,12 +52,23 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
   #encodeMapper: (input: T, extraArgs: TExtraEncodeArgs) => string | undefined;
 
   /**
-   * pre-compiled map of PackerId --> structure key, so that we can perform
-   * blazingly fast decoding by mapping an input string to the correct decoder
-   * by simply inspecting the first two bytes and comparing it to well-known
-   * PackerIds
+   * pre-compiled map of packer key --> packer, so that we can perform very
+   * fast lookup of encode functions.
    */
-  #decodeMap = new Map<PackerId, string>();
+  #keyMap = new Map<string | undefined, WirePacker<T, TExtraEncodeArgs>>();
+
+  /**
+   * pre-compiled map of PackerId --> packer, so that we can perform very fast
+   * lookup of decode functions based on the first character in the output.
+   */
+  #idMap = new Map<PackerId, WirePacker<NoInfer<T>, NoInfer<TExtraEncodeArgs>>>();
+
+  /**
+   * if a single packer is given when creating this class, then it is mapped
+   * here and used exclusively to avoid overhead of encoding unnecessary
+   * structure IDs
+   */
+  #singlePacker: WirePacker<T, TExtraEncodeArgs> | undefined;
 
   /**
    * initialize the instance by creating optimized lookups for decode/encoders
@@ -84,43 +85,32 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
     mapper?: (input: NoInfer<T>, extraArgs: TExtraEncodeArgs) => string | undefined,
   ) {
     if (mapper === undefined) {
-      this.#packers = {
-        packer: {
-          id: "",
-          ...(packers as Omit<WirePacker<T, TExtraEncodeArgs>, "id">),
-        },
+      this.#encodeMapper = () => undefined;
+      this.#singlePacker = {
+        id: 1,
+        ...(packers as Omit<WirePacker<T, TExtraEncodeArgs>, "id">),
       };
 
-      this.#encodeMapper = () => "packer";
+      this.#packers = {
+        singlePacker: this.#singlePacker,
+      };
     } else {
       this.#packers = packers as WirePackerCollection<T, TExtraEncodeArgs>;
       this.#encodeMapper = mapper;
+
+      Object.entries(packers).forEach(([key, packer]) => {
+        if (packer.id <= 0) {
+          throw new Error(`new Wire(): structure IDs must be greater than 0 (${packer.id})`);
+        }
+
+        if (this.#idMap.has(packer.id + WIRE_ENCODE_OFFSET)) {
+          throw new Error(`new Wire(): multiple structures cannot own the same structure ID '${packer.id}' (${key})`);
+        }
+
+        this.#keyMap.set(key, packer);
+        this.#idMap.set(packer.id + WIRE_ENCODE_OFFSET, packer);
+      });
     }
-
-    let idLength: number | undefined;
-
-    Object.entries(this.#packers).forEach(([key, { id }]) => {
-      if (id.charAt(0) === "@") {
-        throw new Error(`new Wire(): structure IDs must not start with @ (${id})`);
-      }
-
-      if (idLength === undefined) {
-        idLength = id.length;
-      } else if (id.length !== idLength) {
-        throw new Error(
-          `new Wire(): all structure IDs must have exact same length (${id} doesn't match expected length of ${idLength})`,
-        );
-      }
-      if (this.#decodeMap.has(id)) {
-        throw new Error(
-          `new Wire(): multiple structures cannot own the same structure ID '${id}' (${key} + ${this.#decodeMap.get(id)})`,
-        );
-      }
-
-      this.#decodeMap.set(id, key);
-    });
-
-    this.#idLength = idLength ?? 0;
   }
 
   /**
@@ -129,11 +119,17 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
    * handling of unknown structures.
    */
   encode(input: T, ...extraArgs: TExtraEncodeArgs): string {
-    const packerKey = this.#encodeMapper(input, extraArgs);
-    if (packerKey === undefined) return JSON.stringify(input);
+    if (this.#singlePacker !== undefined) {
+      // if we're running in a single encoder/decoder setup, then avoid adding
+      // structure ID to output
+      return this.#singlePacker.encode(input, extraArgs);
+    }
 
-    const packer = this.#packers[packerKey];
-    return packer ? packer.id + packer.encode(input, extraArgs) : "@" + pack.str(JSON.stringify(input));
+    const packer = this.#keyMap.get(this.#encodeMapper(input, extraArgs));
+
+    return packer
+      ? String.fromCharCode(packer.id + WIRE_ENCODE_OFFSET) + packer.encode(input, extraArgs)
+      : String.fromCharCode(WIRE_ENCODE_OFFSET) + pack.json(input);
   }
 
   /**
@@ -145,11 +141,13 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
    *        that for maximum hashing performance
    */
   async hash(input: T, encodedStr?: string, ...extraArgs: TExtraEncodeArgs): Promise<string> {
-    const packerKey = this.#encodeMapper(input, extraArgs);
-    if (packerKey === undefined) return sha256(sortObject(input));
+    const packer = this.#singlePacker ?? this.#keyMap.get(this.#encodeMapper(input, extraArgs));
 
-    const packer = this.#packers[packerKey];
-    return sha256(packer ? (encodedStr ?? packer.id + packer.encode(input, extraArgs)) : sortObject(input));
+    return sha256(
+      packer
+        ? (encodedStr ?? String.fromCharCode(packer.id + WIRE_ENCODE_OFFSET) + packer.encode(input, extraArgs))
+        : String.fromCharCode(WIRE_ENCODE_OFFSET) + sortObject(input),
+    );
   }
 
   /**
@@ -158,22 +156,15 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
    * of unknown structures.
    */
   decode(input: string, cursor = 0): [T, number] {
-    const idEnd = cursor + this.#idLength;
-    const packerId = input.slice(cursor, idEnd) as PackerId;
-    const packerKey = this.#decodeMap.get(packerId);
-
-    if (!packerKey) {
-      const str = unpack.str(input, cursor + 1);
-      return [JSON.parse(str[0]), str[1]];
+    if (this.#singlePacker !== undefined) {
+      // if we're running in a single encoder/decoder setup, then run it from
+      // the beginning of the input
+      return this.#singlePacker.decode(input, cursor);
     }
 
-    const packer = this.#packers[packerKey];
-    if (!packer) {
-      const str = unpack.str(input, cursor + 1);
-      return [JSON.parse(str[0]), str[1]];
-    }
+    const packer = this.#idMap.get(input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET);
 
-    return packer.decode(input, idEnd);
+    return packer ? packer.decode(input, cursor + 1) : (unpack.json(input, cursor + 1) as [T, number]);
   }
 
   /**

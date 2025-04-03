@@ -1,6 +1,6 @@
 import { makeDeferred, PushableAsyncGenerator } from "@direct.dev/shared";
 
-import { pack, unpack } from "./core.pack.js";
+import { pack, WIRE_ENCODE_OFFSET } from "./core.pack.js";
 
 // ID of the Wire stream version, added to allow backwards compatible
 // versioning of wire encoder/decoders between backend and clients
@@ -111,8 +111,18 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
    * push the specified input to the stream.
    */
   push(input: string): void {
-    this.#controllerRef.current?.enqueue(this.#textEncoder.encode("0" + pack.str(input)));
-    this.#sizeInBytes += input.length + 1;
+    // @ENCODE STRING LENGTH
+    let len = input.length;
+    let prefix = "0";
+    while (len > 0) {
+      let byte = len & 0b00111111;
+      len >>= 6;
+      if (len > 0) byte |= 0b01000000;
+      prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+    }
+
+    this.#controllerRef.current?.enqueue(this.#textEncoder.encode(prefix + input));
+    this.#sizeInBytes += prefix.length + input.length;
   }
 
   /**
@@ -120,9 +130,26 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
    * handling.
    */
   close(input?: string | null): void {
-    this.#controllerRef.current?.enqueue(this.#textEncoder.encode(input != null ? "1" + pack.str(input) : "2"));
-    this.#controllerRef.current?.close();
-    this.#sizeInBytes += input != null ? input.length + 1 : 1;
+    if (input != null) {
+      // @ENCODE STRING LENGTH
+      let len = input.length;
+      let prefix = "1";
+
+      while (len > 0) {
+        let byte = len & 0b00111111;
+        len >>= 6;
+        if (len > 0) byte |= 0b01000000;
+        prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      }
+
+      this.#controllerRef.current?.enqueue(this.#textEncoder.encode(prefix + input));
+      this.#controllerRef.current?.close();
+      this.#sizeInBytes += input.length + prefix.length;
+    } else {
+      this.#controllerRef.current?.enqueue(this.#textEncoder.encode("2"));
+      this.#controllerRef.current?.close();
+      this.#sizeInBytes += 1;
+    }
 
     this.#deferred.__resolve(undefined);
   }
@@ -141,6 +168,12 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
  * signature into an AsyncGenerator for convenient and fast stream processing.
  */
 export class WireDecodeStream {
+  /**
+   * internal promise instance which will be resolved when the stream is
+   * closed, supporting the `wait()` call below.
+   */
+  readonly #deferred = makeDeferred<undefined>();
+
   /**
    * utility to transform an in-memory string into a WireDecodeStream
    * generator, for convenience in cases where data isn't actually read from a
@@ -163,40 +196,41 @@ export class WireDecodeStream {
           return;
         }
 
-        // scan for length of the next item on the stream, using the same
-        // low-level optimizations as unpack.str implements
+        // @DECODE STRING LENGTH
         let cursor = 1;
         let len = 0;
+        let shift = 0;
+        let byte;
 
-        while (buffer.charCodeAt(cursor) >= 48 && buffer.charCodeAt(cursor) <= 57) {
-          len = len * 10 + (buffer.charCodeAt(cursor) - 48);
-          cursor++;
-        }
+        do {
+          byte = buffer.charCodeAt(cursor++) - WIRE_ENCODE_OFFSET;
+          len |= (byte & 0b00111111) << (shift++ * 6);
+        } while (byte & 0b01000000);
 
         // if we found the length of the next entry, and we can tell that the
         // stream includes the entirety of the encoded object, then perform
         // parsing
-        if (cursor > 1 && buffer.length >= cursor + len + 1) {
+        if (!Number.isNaN(byte) && buffer.length >= cursor + len) {
           const done = buffer.charCodeAt(0) === 49;
-          const value = unpack.str(buffer, 1);
+          const value = buffer.slice(cursor, cursor + len);
 
           if (!done) {
             // yield the decoded entry
             push({
               done: false,
-              value: await transformEntry(value[0], wireVersion),
+              value: await transformEntry(value, wireVersion),
               version: wireVersion,
             });
 
             // slice the buffer, so that the previously emitted value is no
             // longer retained in-memory
-            buffer = buffer.slice(value[1]);
+            buffer = buffer.slice(cursor + len);
           } else {
             // if we get here, the final response has been received - emit it
             // and break further execution
             push({
               done: true,
-              value: await transformDone(value[0], wireVersion),
+              value: await transformDone(value, wireVersion),
               version: wireVersion,
             });
             return;
@@ -245,76 +279,81 @@ export class WireDecodeStream {
     transformEntry: (input: string, version: number) => Promise<T> | T = (input) => input as T,
     transformDone: (input: string, version: number) => Promise<TDone> | TDone = (input) => input as TDone,
   ): AsyncGenerator<WireStreamEntry<T, TDone>> {
-    const reader = this.#readStream.getReader();
+    try {
+      const reader = this.#readStream.getReader();
 
-    let wireVersion: number | undefined;
-    let result: ReadableStreamReadResult<Uint8Array> | undefined;
+      let wireVersion: number | undefined;
+      let result: ReadableStreamReadResult<Uint8Array> | undefined;
 
-    while (!(result = await reader.read()).done) {
-      this.#buffer += this.#textDecoder.decode(result.value);
+      while (!(result = await reader.read()).done) {
+        this.#buffer += this.#textDecoder.decode(result.value);
 
-      // if we haven't extracted the version of the parser yet, then do so now
-      if (wireVersion === undefined) {
-        this.version.__resolve((wireVersion = this.#buffer.charCodeAt(0) - 48));
-        this.#buffer = this.#buffer.slice(1);
-      }
-
-      while (this.#buffer.length > 0) {
-        if (this.#buffer.charCodeAt(0) === 50) {
-          // if we received a full-stop character ("2") then end the stream
-          // instantly
-          return;
+        // if we haven't extracted the version of the parser yet, then do so now
+        if (wireVersion === undefined) {
+          this.version.__resolve((wireVersion = this.#buffer.charCodeAt(0) - 48));
+          this.#buffer = this.#buffer.slice(1);
         }
 
-        // scan for length of the next item on the stream, using the same
-        // low-level optimizations as unpack.str implements
-        let cursor = 1;
-        let len = 0;
-
-        while (this.#buffer.charCodeAt(cursor) >= 48 && this.#buffer.charCodeAt(cursor) <= 57) {
-          len = len * 10 + (this.#buffer.charCodeAt(cursor) - 48);
-          cursor++;
-        }
-
-        // if we found the length of the next entry, and we can tell that the
-        // stream includes the entirety of the encoded object, then perform
-        // parsing
-        if (cursor > 1 && this.#buffer.length >= cursor + len + 1) {
-          const done = this.#buffer.charCodeAt(0) === 49;
-          const value = unpack.str(this.#buffer, 1);
-
-          if (!done) {
-            // yield the decoded entry
-            yield {
-              done: false,
-              value: await transformEntry(value[0], wireVersion),
-              version: wireVersion,
-            };
-
-            // slice the buffer, so that the previously emitted value is no
-            // longer retained in-memory
-            this.#buffer = this.#buffer.slice(value[1]);
-          } else {
-            // if we get here, the final response has been received - emit it
-            // and break further execution
-            yield {
-              done: true,
-              value: await transformDone(value[0], wireVersion),
-              version: wireVersion,
-            };
+        while (this.#buffer.length > 0) {
+          if (this.#buffer.charCodeAt(0) === 50) {
+            // if we received a full-stop character ("2") then end the stream
+            // instantly
             return;
           }
-        } else {
-          break;
+
+          // @DECODE STRING LENGTH
+          let cursor = 1;
+          let len = 0;
+          let shift = 0;
+          let byte;
+
+          do {
+            byte = this.#buffer.charCodeAt(cursor++) - WIRE_ENCODE_OFFSET;
+            len |= (byte & 0b00111111) << (shift++ * 6);
+          } while (byte & 0b01000000);
+
+          // if we found the length of the next entry, and we can tell that the
+          // stream includes the entirety of the encoded object, then perform
+          // parsing
+          if (!Number.isNaN(byte) && this.#buffer.length >= cursor + len) {
+            const done = this.#buffer.charCodeAt(0) === 49;
+            const value = this.#buffer.slice(cursor, cursor + len);
+
+            if (!done) {
+              // yield the decoded entry
+              yield {
+                done: false,
+                value: await transformEntry(value, wireVersion),
+                version: wireVersion,
+              };
+
+              // slice the buffer, so that the previously emitted value is no
+              // longer retained in-memory
+              this.#buffer = this.#buffer.slice(cursor + len);
+            } else {
+              // if we get here, the final response has been received - emit it
+              // and break further execution
+              yield {
+                done: true,
+                value: await transformDone(value, wireVersion),
+                version: wireVersion,
+              };
+              return;
+            }
+          } else {
+            break;
+          }
         }
       }
-    }
 
-    // if we get here, essentially something went wrong with the stream -
-    // format is invalid or the pipe broke :(
-    throw new Error(
-      "WireDecodeStream.getReader(): reached unexpected end of reader loop without receiving encoded report entry",
-    );
+      // if we get here, essentially something went wrong with the stream -
+      // format is invalid or the pipe broke :(
+      throw new Error(
+        "WireDecodeStream.getReader(): reached unexpected end of reader loop without receiving encoded report entry",
+      );
+    } finally {
+      this.#deferred.__resolve(undefined);
+    }
   }
 
   /**
@@ -331,5 +370,12 @@ export class WireDecodeStream {
     }
 
     return buffer;
+  }
+
+  /**
+   * returns a promise that resolves once the stream has been closed.
+   */
+  async wait(): Promise<void> {
+    await this.#deferred;
   }
 }

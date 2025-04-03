@@ -20,7 +20,7 @@ export type RPCRequestStructure = DirectRPCRequest & {
 export const RPCRequest = new Wire<RPCRequestStructure>(
   {
     direct_primer: {
-      id: "0",
+      id: 1,
       encode: (input) => pack.strOrNum(input.id) + pack.nullableStr(input.params[0]),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -30,7 +30,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
           {
             id: id[0],
             method: "direct_primer",
-            params: [context[0]],
+            params: context[0] != null ? [context[0]] : [],
           },
           context[1],
         ];
@@ -38,7 +38,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_blockNumber: {
-      id: "1",
+      id: 2,
       encode: (input) => pack.strOrNum(input.id),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -47,6 +47,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
           {
             id: id[0],
             method: "eth_blockNumber",
+            params: [],
           },
           id[1],
         ];
@@ -54,7 +55,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_call: {
-      id: "2",
+      id: 3,
       encode: (input) =>
         pack.strOrNum(input.id) +
         pack.str(input.params[0].to) +
@@ -65,7 +66,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
         pack.nullableStr(input.params[0].gas) +
         pack.nullableStr(input.params[0].gasPrice) +
         // @note -- this is where we handle block override during encoding
-        pack.nullableStr(input.__overrideBlockHeight ?? input.params[1]),
+        pack.str(input.__overrideBlockHeight ?? input.params[1]),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
         const toParam = unpack.str(input, id[1]);
@@ -75,7 +76,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
         const valueParam = unpack.nullableStr(input, inputParam[1]);
         const gasParam = unpack.nullableStr(input, valueParam[1]);
         const gasPriceParam = unpack.nullableStr(input, gasParam[1]);
-        const blockHeight = unpack.nullableStr(input, gasPriceParam[1]);
+        const blockHeight = unpack.str(input, gasPriceParam[1]);
 
         return [
           {
@@ -100,7 +101,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_chainId: {
-      id: "3",
+      id: 4,
       encode: (input) => pack.strOrNum(input.id),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -109,6 +110,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
           {
             id: id[0],
             method: "eth_chainId",
+            params: [],
           },
           id[1],
         ];
@@ -116,7 +118,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_gasPrice: {
-      id: "4",
+      id: 5,
       encode: (input) => pack.strOrNum(input.id),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -125,33 +127,329 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
           {
             id: id[0],
             method: "eth_gasPrice",
+            params: [],
           },
           id[1],
         ];
       },
     },
 
-    /**
-     * @todo (Mads): determine which calls to include handling for
-     * ```ts
-     * eth_getBalance: readonly [RPCAddressValue, RPCBlockHeightParam];
-     * eth_getBlockByHash: readonly [RPCHashValue, boolean];
-     * eth_getBlockByNumber: readonly [RPCBlockHeightParam, boolean];
-     * eth_getBlockTransactionCountByHash: readonly [RPCHashValue];
-     * eth_getBlockTransactionCountByNumber: readonly [RPCBlockHeightParam];
-     * eth_getCode: readonly [RPCAddressValue, RPCBlockHeightParam];
-     * eth_getStorageAt: readonly [RPCAddressValue, RPCQuantityValue, RPCBlockHeightParam];
-     * eth_getTransactionByBlockHashAndIndex: readonly [RPCHashValue, RPCQuantityValue];
-     * eth_getTransactionByBlockNumberAndIndex: readonly [RPCBlockHeightParam, RPCQuantityValue];
-     * eth_getTransactionByHash: readonly [RPCHashValue];
-     * eth_getTransactionCount: readonly [RPCAddressValue, RPCBlockHeightParam];
-     * eth_getTransactionReceipt: readonly [RPCHashValue];
-     * eth_getUncleByBlockHashAndIndex: readonly [RPCHashValue, RPCQuantityValue];
-     * eth_getUncleByBlockNumberAndIndex: readonly [RPCBlockHeightParam, RPCQuantityValue];
-     * eth_getUncleCountByBlockHash: readonly [RPCHashValue];
-     * eth_getUncleCountByBlockNumber: readonly [RPCBlockHeightParam];
-     * ```
-     **/
+    eth_getBalance: {
+      id: 6,
+      encode: (input) =>
+        pack.strOrNum(input.id) +
+        pack.str(input.params[0]) +
+        // @note -- this is where we handle block override during encoding
+        pack.str(input.__overrideBlockHeight ?? input.params[1]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const address = unpack.str(input, id[1]);
+        const blockHeight = unpack.str(input, address[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getBalance",
+            params: [address[0], blockHeight[0]],
+          },
+          blockHeight[1],
+        ];
+      },
+    },
+
+    eth_getBlockByHash: {
+      id: 7,
+      encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]) + pack.bool(input.params[1]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const blockHash = unpack.str(input, id[1]);
+        const fullOutput = unpack.bool(input, blockHash[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getBlockByHash",
+            params: [blockHash[0], fullOutput[0]],
+          },
+          fullOutput[1],
+        ];
+      },
+    },
+
+    eth_getBlockByNumber: {
+      id: 8,
+      encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]) + pack.bool(input.params[1]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const blockHeight = unpack.str(input, id[1]);
+        const fullOutput = unpack.bool(input, blockHeight[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getBlockByNumber",
+            params: [blockHeight[0], fullOutput[0]],
+          },
+          fullOutput[1],
+        ];
+      },
+    },
+
+    eth_getBlockTransactionCountByHash: {
+      id: 9,
+      encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const blockHash = unpack.str(input, id[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getBlockTransactionCountByHash",
+            params: [blockHash[0]],
+          },
+          blockHash[1],
+        ];
+      },
+    },
+
+    eth_getBlockTransactionCountByNumber: {
+      id: 10,
+      encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const blockHeight = unpack.str(input, id[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getBlockTransactionCountByNumber",
+            params: [blockHeight[0]],
+          },
+          blockHeight[1],
+        ];
+      },
+    },
+
+    eth_getCode: {
+      id: 11,
+      encode: (input) =>
+        pack.strOrNum(input.id) +
+        pack.str(input.params[0]) +
+        // @note -- this is where we handle block override during encoding
+        pack.str(input.__overrideBlockHeight ?? input.params[1]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const address = unpack.str(input, id[1]);
+        const blockHeight = unpack.str(input, address[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getCode",
+            params: [address[0], blockHeight[0]],
+          },
+          blockHeight[1],
+        ];
+      },
+    },
+
+    eth_getStorageAt: {
+      id: 12,
+      encode: (input) =>
+        pack.strOrNum(input.id) +
+        pack.str(input.params[0]) +
+        pack.str(input.params[1]) +
+        // @note -- this is where we handle block override during encoding
+        pack.str(input.__overrideBlockHeight ?? input.params[2]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const address = unpack.str(input, id[1]);
+        const quantity = unpack.str(input, address[1]);
+        const blockHeight = unpack.str(input, quantity[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getStorageAt",
+            params: [address[0], quantity[0], blockHeight[0]],
+          },
+          blockHeight[1],
+        ];
+      },
+    },
+
+    eth_getTransactionByBlockHashAndIndex: {
+      id: 13,
+      encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]) + pack.str(input.params[1]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const blockHash = unpack.str(input, id[1]);
+        const quantity = unpack.str(input, blockHash[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getTransactionByBlockHashAndIndex",
+            params: [blockHash[0], quantity[0]],
+          },
+          quantity[1],
+        ];
+      },
+    },
+
+    eth_getTransactionByBlockNumberAndIndex: {
+      id: 14,
+      encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]) + pack.str(input.params[1]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const blockNumber = unpack.str(input, id[1]);
+        const quantity = unpack.str(input, blockNumber[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getTransactionByBlockNumberAndIndex",
+            params: [blockNumber[0], quantity[0]],
+          },
+          quantity[1],
+        ];
+      },
+    },
+
+    eth_getTransactionByHash: {
+      id: 15,
+      encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const txHash = unpack.str(input, id[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getTransactionByHash",
+            params: [txHash[0]],
+          },
+          txHash[1],
+        ];
+      },
+    },
+
+    eth_getTransactionCount: {
+      id: 16,
+      encode: (input) =>
+        pack.strOrNum(input.id) +
+        pack.str(input.params[0]) +
+        // @note -- this is where we handle block override during encoding
+        pack.str(input.__overrideBlockHeight ?? input.params[1]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const address = unpack.str(input, id[1]);
+        const blockHeight = unpack.str(input, address[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getTransactionCount",
+            params: [address[0], blockHeight[0]],
+          },
+          blockHeight[1],
+        ];
+      },
+    },
+
+    eth_getTransactionReceipt: {
+      id: 17,
+      encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const txHash = unpack.str(input, id[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getTransactionReceipt",
+            params: [txHash[0]],
+          },
+          txHash[1],
+        ];
+      },
+    },
+
+    eth_getUncleByBlockHashAndIndex: {
+      id: 18,
+      encode: (input) =>
+        pack.strOrNum(input.id) + pack.str(input.params[0]) + pack.str(input.__overrideBlockHeight ?? input.params[1]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const blockHash = unpack.str(input, id[1]);
+        const blockIndex = unpack.str(input, blockHash[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getUncleByBlockHashAndIndex",
+            params: [blockHash[0], blockIndex[0]],
+          },
+          blockIndex[1],
+        ];
+      },
+    },
+
+    eth_getUncleByBlockNumberAndIndex: {
+      id: 19,
+      encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]) + pack.str(input.params[1]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const blockNumber = unpack.str(input, id[1]);
+        const blockIndex = unpack.str(input, blockNumber[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getUncleByBlockNumberAndIndex",
+            params: [blockNumber[0], blockIndex[0]],
+          },
+          blockIndex[1],
+        ];
+      },
+    },
+
+    eth_getUncleCountByBlockHash: {
+      id: 20,
+      encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const blockHash = unpack.str(input, id[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getUncleCountByBlockHash",
+            params: [blockHash[0]],
+          },
+          blockHash[1],
+        ];
+      },
+    },
+
+    eth_getUncleCountByBlockNumber: {
+      id: 21,
+      encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const blockNumber = unpack.str(input, id[1]);
+
+        return [
+          {
+            id: id[0],
+            method: "eth_getUncleCountByBlockNumber",
+            params: [blockNumber[0]],
+          },
+          blockNumber[1],
+        ];
+      },
+    },
   },
   (input) => {
     return input.method;

@@ -15,15 +15,15 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
     //
 
     direct_head: {
-      id: "0",
+      id: 1,
       encode: (input) =>
         pack.arr((input as DirectRPCHead).predictions, (it) => pack.str(it)) +
         pack.nullableStr((input as DirectRPCHead).blockHeight) +
-        pack.nullableStr((input as DirectRPCHead).blockHeightExpiresAt),
+        pack.nullableDate((input as DirectRPCHead).blockHeightExpiresAt),
       decode: (input, cursor) => {
         const predictions = unpack.arr(input, cursor, (cursor) => unpack.str(input, cursor));
         const blockHeight = unpack.nullableStr(input, predictions[1]);
-        const blockHeightExpiresAt = unpack.nullableStr(input, blockHeight[1]);
+        const blockHeightExpiresAt = unpack.nullableDate(input, blockHeight[1]);
 
         return [
           {
@@ -37,7 +37,7 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
     },
 
     direct_primer: {
-      id: "1",
+      id: 2,
       encode: (input) => pack.strOrNum((input as DirectRPCSuccessResponse).id),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -58,16 +58,16 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
     //
 
     rpc_success__primitive: {
-      id: "2",
+      id: 3,
       encode: (input) =>
         pack.strOrNum((input as DirectRPCSuccessResponse).id) +
-        pack.bool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges ?? false) +
-        pack.nullableStr((input as DirectRPCSuccessResponse).expiresAt) +
+        pack.nullableBool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges) +
+        pack.nullableDate((input as DirectRPCSuccessResponse).expiresAt) +
         pack.primitive((input as DirectRPCSuccessResponse).result as string),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
-        const expiresWhenBlockHeightChanges = unpack.bool(input, id[1]);
-        const expiresAt = unpack.nullableStr(input, expiresWhenBlockHeightChanges[1]);
+        const expiresWhenBlockHeightChanges = unpack.nullableBool(input, id[1]);
+        const expiresAt = unpack.nullableDate(input, expiresWhenBlockHeightChanges[1]);
         const result = unpack.primitive(input, expiresAt[1]);
 
         return [
@@ -77,22 +77,22 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
             expiresWhenBlockHeightChanges: expiresWhenBlockHeightChanges[0],
             expiresAt: expiresAt[0],
           },
-          expiresAt[1],
+          result[1],
         ];
       },
     },
 
     rpc_success__json: {
-      id: "3",
+      id: 4,
       encode: (input) =>
         pack.strOrNum((input as DirectRPCSuccessResponse).id) +
-        pack.bool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges ?? false) +
-        pack.nullableStr((input as DirectRPCSuccessResponse).expiresAt) +
+        pack.nullableBool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges) +
+        pack.nullableDate((input as DirectRPCSuccessResponse).expiresAt) +
         pack.json((input as DirectRPCSuccessResponse).result),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
-        const expiresWhenBlockHeightChanges = unpack.bool(input, id[1]);
-        const expiresAt = unpack.nullableStr(input, expiresWhenBlockHeightChanges[1]);
+        const expiresWhenBlockHeightChanges = unpack.nullableBool(input, id[1]);
+        const expiresAt = unpack.nullableDate(input, expiresWhenBlockHeightChanges[1]);
         const result = unpack.json(input, expiresAt[1]);
 
         return [
@@ -102,13 +102,13 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
             expiresWhenBlockHeightChanges: expiresWhenBlockHeightChanges[0],
             expiresAt: expiresAt[0],
           },
-          expiresAt[1],
+          result[1],
         ];
       },
     },
 
     rpc_error: {
-      id: "4",
+      id: 5,
       encode: (input) =>
         pack.strOrNum((input as DirectRPCErrorResponse).id) +
         pack.strOrNum((input as DirectRPCErrorResponse).error.code) +

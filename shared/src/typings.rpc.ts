@@ -36,7 +36,7 @@ export type DirectRPCSuccessResponse = {
 export type DirectRPCErrorResponse = {
   id: string | number;
   error: {
-    code: string | number;
+    code: number;
     message: string;
     data?: unknown;
   };

@@ -12,6 +12,7 @@ import type { DirectRPCRequest } from "@direct.dev/shared";
  */
 export function createDirectViemClient(config: DirectRPCClientConfig, chain?: Chain): PublicClient {
   const directClient = new DirectRPCClient(config);
+  let autoIncrementedId = 0;
 
   return createPublicClient({
     key: `direct-${config.projectId}:${config.networkId}`,
@@ -20,17 +21,20 @@ export function createDirectViemClient(config: DirectRPCClientConfig, chain?: Ch
     transport: custom(
       {
         async request(input: Omit<DirectRPCRequest, "id"> & Partial<DirectRPCRequest> & { jsonrpc?: string }) {
+          const id = input.id ?? ++autoIncrementedId;
+          const jsonrpc = input.jsonrpc ?? "2.0";
+
           const res = await directClient.fetch({
             ...input,
-            id: input.id ?? 1,
-            jsonrpc: input.jsonrpc ?? "2.0",
+            id,
+            jsonrpc,
           });
 
           if ("error" in res) {
             throw new RpcRequestError({
               body: res,
-              error: res.error as { code: number; data?: unknown; message: string },
-              url: "https://rpc.direct.dev/",
+              error: res.error,
+              url: directClient.endpointUrl,
             });
           }
 

@@ -111,12 +111,12 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
       id: 5,
       encode: (input) =>
         pack.strOrNum((input as DirectRPCErrorResponse).id) +
-        pack.strOrNum((input as DirectRPCErrorResponse).error.code) +
+        pack.num((input as DirectRPCErrorResponse).error.code) +
         pack.str((input as DirectRPCErrorResponse).error.message) +
         pack.json((input as DirectRPCErrorResponse).error.data),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
-        const code = unpack.strOrNum(input, id[1]);
+        const code = unpack.num(input, id[1]);
         const message = unpack.str(input, code[1]);
         const json = unpack.json(input, message[1]);
 

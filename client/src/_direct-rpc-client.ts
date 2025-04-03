@@ -199,7 +199,7 @@ export class DirectRPCClient {
   /**
    * specifies the URL which should be used when connecting to Direct.dev
    */
-  #endpointUrl: string;
+  readonly endpointUrl: string;
 
   /**
    * specifies if client should bypass Direct.dev infrastructure, as it is
@@ -298,7 +298,7 @@ export class DirectRPCClient {
   #isDestroyed = false;
 
   constructor(config: DirectRPCClientConfig) {
-    this.#endpointUrl = `${config.baseUrl ?? "https://rpc.direct.dev"}/v1/${encodeURIComponent(config.projectToken ? config.projectId + "." + config.projectToken : config.projectId)}/${encodeURIComponent(config.networkId)}`;
+    this.endpointUrl = `${config.baseUrl ?? "https://rpc.direct.dev"}/v1/${encodeURIComponent(config.projectToken ? config.projectId + "." + config.projectToken : config.projectId)}/${encodeURIComponent(config.networkId)}`;
     this.#devMode =
       !!config.devMode && (typeof location === "undefined" || !location.search.includes("directdev=true"));
 
@@ -330,7 +330,7 @@ export class DirectRPCClient {
     // prepare configurations for handling batches of requests
     this.#batchWindowMs = config.batchWindowMs ?? 25;
     this.#batchConfig = {
-      endpointUrl: this.#endpointUrl + (config.preferJSON ? "/ndjson" : ""),
+      endpointUrl: this.endpointUrl + (config.preferJSON ? "/ndjson" : ""),
       preferJSON: config.preferJSON,
       isHttps: config.baseUrl ? config.baseUrl.startsWith("https://") : false,
     };
@@ -955,7 +955,7 @@ export class DirectRPCClient {
       }),
     );
 
-    navigator.sendBeacon(this.#endpointUrl, await new WireDecodeStream(encodeStream).toString());
+    navigator.sendBeacon(this.endpointUrl, await new WireDecodeStream(encodeStream).toString());
 
     // reset in-memory samples and hope that the beacon goes through for proper
     // collection of metrics

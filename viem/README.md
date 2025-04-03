@@ -29,11 +29,11 @@ A **viem**-compatible client that integrates with the [Direct.dev](https://direc
 ## Installation
 
 ```sh
-npm install @direct.dev/viem viem
+npm install @direct.dev/viem viem@2.x
 # or
-yarn add @direct.dev/viem viem
+yarn add @direct.dev/viem viem@2.x
 # or
-pnpm add @direct.dev/viem viem
+pnpm add @direct.dev/viem viem@2.x
 ```
 
 ## Usage

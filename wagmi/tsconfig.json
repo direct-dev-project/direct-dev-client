@@ -1,0 +1,9 @@
+{
+  "extends": "@direct.dev/tooling-typescript-config/recommended",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib"
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules"]
+}

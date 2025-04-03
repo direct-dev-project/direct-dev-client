@@ -9,7 +9,7 @@ export type SupportedNetworkConfig = {
 
   /**
    * The type of the chain, which is used to handle compatibility across
-   * multiple chains within the rpc-cache and rpc-distributor applications.
+   * multiple chains within the rpc-worker.
    */
   chainType: SupportedChainType;
 
@@ -37,8 +37,7 @@ export type SupportedNetworkConfig = {
 };
 
 /**
- * Configuration of all networks supported within the rpc-cache and
- * rpc-distributor applications
+ * Configuration of all networks supported within the rpc-worker.
  *
  * @note the order of entries will affect the order of networks, as presented
  *       within the Dashboard UI.

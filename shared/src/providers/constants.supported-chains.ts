@@ -8,8 +8,7 @@ export type SupportedChainConfig = {
 };
 
 /**
- * Configuration of all chains supported within the rpc-cache and
- * rpc-distributor applications
+ * Configuration of all chains supported within the rpc worker.
  *
  * @note the order of entries will affect the order of chains, as presented
  *       within the Dashboard UI.

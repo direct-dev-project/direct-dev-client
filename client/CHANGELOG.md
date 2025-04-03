@@ -1,5 +1,12 @@
 # @direct.dev/client
 
+## 0.2.0
+
+### Patch Changes
+
+- @direct.dev/shared@0.2.0
+- @direct.dev/wire@0.2.0
+
 ## 0.1.3
 
 ### Patch Changes

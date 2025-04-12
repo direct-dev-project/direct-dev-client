@@ -71,11 +71,11 @@ export abstract class DirectRPCBatch {
       // by default we use a WireStream and encode content using the
       // appropriate Wire packers
       this.bodyStream = new WireEncodeStream(async (push) => {
-        let result: IteratorResult<DirectRPCRequest, wire.ClientMetrics>;
+        let result: IteratorResult<DirectRPCRequest, wire.ClientReport>;
 
         while ((result = await this.#requests.next()).value) {
           if (result.done) {
-            return wire.clientMetrics.encode(result.value);
+            return wire.clientReport.encode(result.value);
           }
 
           push(wire.RPCRequest.encode(result.value));
@@ -138,7 +138,7 @@ export abstract class DirectRPCBatch {
    * encoded on the Wirestream to transmit the message.
    */
   async dispatch(
-    metrics: wire.ClientMetrics,
+    metrics: wire.ClientReport,
   ): Promise<
     | AsyncGenerator<{ done: boolean; value: DirectRPCHead | DirectRPCSuccessResponse | DirectRPCErrorResponse }>
     | undefined

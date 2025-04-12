@@ -68,22 +68,16 @@ export class PushableAsyncGenerator<T, TReturn = any> implements AsyncGenerator<
   async toArray(maxLength?: number): Promise<T[]> {
     const output: T[] = [];
 
-    if (maxLength === undefined) {
-      for await (const entry of this) {
-        output.push(entry);
-      }
-    } else {
-      for (let i = 0; i < maxLength; i++) {
-        const nextResult = await (this.#deferred[i] ??= makeDeferred());
+    for (let i = 0, j = maxLength ?? Infinity; i < j; i++) {
+      const nextResult = await (this.#deferred[i] ??= makeDeferred());
 
-        if (nextResult.done) {
-          // we cannot iterate further than the length of the stream, break loop
-          // if generator ends
-          break;
-        }
-
-        output.push(nextResult.value);
+      if (nextResult.done) {
+        // we cannot iterate further than the length of the stream, break loop
+        // if generator ends
+        break;
       }
+
+      output.push(nextResult.value);
     }
 
     return output;
@@ -94,6 +88,13 @@ export class PushableAsyncGenerator<T, TReturn = any> implements AsyncGenerator<
    */
   get size(): number {
     return this.#isClosed ? this.#writeCursor - 1 : this.#writeCursor;
+  }
+
+  /**
+   * specifies if the generator has been closed yet
+   */
+  get isClosed() {
+    return this.#isClosed;
   }
 
   //

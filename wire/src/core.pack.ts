@@ -722,14 +722,29 @@ export const WIRE_DICTIONARY = [
   "pending",
   "safe",
 
+  // request reports
+  "client",
+  "entry",
+  "mirror",
+  "distributor",
+
+  "hit",
+  "miss",
+  "inflight",
+  "ineligible",
+  "prefetch",
+
+  "wire",
+  "ndjson",
+  "json",
+  "multi-json",
+
   // errors from Direct.dev
   "failed to receive response (Direct.dev)",
   "request timed out (Direct.dev)",
+  "request was not found in cache (Direct.dev)",
   "cannot parse block height param (Direct.dev)",
   "the block height param is out of range (Direct.dev)",
-  "the request is ineligible for caching (Direct.dev)",
-  "the inflight request hit timed out (Direct.dev)",
-  "cache miss for request (Direct.dev)",
 ];
 const DICTIONARY_OFFSET = 0b110000000 + WIRE_ENCODE_OFFSET;
 

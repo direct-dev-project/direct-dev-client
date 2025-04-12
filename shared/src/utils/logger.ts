@@ -1,4 +1,4 @@
-export type LogLevel = Exclude<keyof Logger, "setContext">;
+export type LogLevel = Exclude<keyof Logger, "setContext" | "__extend">;
 
 type LoggerConfig = {
   level: LogLevel;
@@ -87,6 +87,14 @@ export class Logger {
     this.info = makeLogFn(nextConfig, "info");
     this.warn = makeLogFn(nextConfig, "warn");
     this.error = makeLogFn(nextConfig, "error");
+  }
+
+  /**
+   * utility to easily allow extending an existing logger object, providing
+   * additional configurations to the created logger
+   */
+  __extend(extraConfig?: Partial<LoggerConfig>): Logger {
+    return new Logger({ ...this.#config, ...extraConfig });
   }
 }
 

@@ -275,21 +275,16 @@ export class DirectRPCClient {
   #batchTimeout: NodeJS.Timeout | number | undefined;
 
   /**
-   * increments number of requests served from in-memory cache locally.
+   * internally collects collection of requests that were served from in-memory
+   * cache, so that they can be sampled for popularity subsequently
    */
-  #cacheHitCount = 0;
+  #cacheHits: DirectRPCRequest[] = [];
 
   /**
-   * increments number of requests served from inflight uniqueness cache
-   * locally.
+   * internally collects collection of requests that were served from in-memory
+   * cache, so that they can be sampled for popularity subsequently
    */
-  #inflightHitCount = 0;
-
-  /**
-   * internally collects samples of requests that have been served from
-   * in-memory cache, so that they can be emitted upon subsequent requests
-   */
-  #clientSamples: DirectRPCRequest[] = [];
+  #inflightHits: DirectRPCRequest[] = [];
 
   /**
    * specifies if this client instance has been destroyed, used to prevent
@@ -448,8 +443,7 @@ export class DirectRPCClient {
               cacheEntry.inception.blockHeight !== this.#currentBlockHeight?.value);
 
           if (!expiredByTimeToLive && !expiredByBlockHeight) {
-            this.#cacheHitCount++;
-            this.#clientSamples.push(req);
+            this.#cacheHits.push(req);
 
             return cacheEntry.value;
           } else {
@@ -462,8 +456,7 @@ export class DirectRPCClient {
         const inflightPromise = this.#inflightCache.get(reqHash);
 
         if (inflightPromise) {
-          this.#inflightHitCount++;
-          this.#clientSamples.push(req);
+          this.#inflightHits.push(req);
 
           return inflightPromise;
         }
@@ -676,15 +669,15 @@ export class DirectRPCClient {
       AsyncGenerator<{ done: boolean; value: DirectRPCHead | DirectRPCSuccessResponse | DirectRPCErrorResponse }>,
     ]
   > {
-    const cacheHitCount = this.#cacheHitCount;
-    const inflightHitCount = this.#inflightHitCount;
-    const samples = this.#clientSamples;
+    const cacheHits = this.#cacheHits;
+    const inflightHits = this.#inflightHits;
 
-    this.#clientSamples = [];
+    this.#cacheHits = [];
+    this.#inflightHits = [];
 
     // dispatch request including metrics data to the Direct.dev layer for
     // further processing
-    const response = await batch.dispatch({ cacheHitCount, inflightHitCount, samples });
+    const response = await batch.dispatch({ cacheHits, inflightHits });
 
     if (response) {
       // if things went OK, then reset any previously known backoff-settings
@@ -700,11 +693,12 @@ export class DirectRPCClient {
 
     // restore in-memory copy of local cache hits, as we were unable to
     // sample them in the backend layer
-    this.#cacheHitCount += cacheHitCount;
-    this.#inflightHitCount += inflightHitCount;
+    for (const req of cacheHits) {
+      this.#cacheHits.push(req);
+    }
 
-    for (const req of samples) {
-      this.#clientSamples.push(req);
+    for (const req of inflightHits) {
+      this.#inflightHits.push(req);
     }
 
     // register the error internally, so we can perform exponential backoff
@@ -934,11 +928,10 @@ export class DirectRPCClient {
    * RPC Agent, so that we ensure correctness of popularity scoring.
    */
   #sendBeacon = async () => {
-    const cacheHitCount = this.#cacheHitCount;
-    const inflightHitCount = this.#inflightHitCount;
-    const samples = this.#clientSamples;
+    const cacheHits = this.#cacheHits;
+    const inflightHits = this.#inflightHits;
 
-    if (cacheHitCount === 0 && inflightHitCount === 0 && samples.length === 0) {
+    if (cacheHits.length === 0 && inflightHits.length === 0) {
       // avoid dispatching anything if there are no metrics to deliver to the
       // upstream
       return;
@@ -948,10 +941,9 @@ export class DirectRPCClient {
     const encodeStream = new WireEncodeStream();
 
     encodeStream.close(
-      wire.clientMetrics.encode({
-        cacheHitCount,
-        inflightHitCount,
-        samples,
+      wire.clientReport.encode({
+        cacheHits,
+        inflightHits,
       }),
     );
 
@@ -959,7 +951,8 @@ export class DirectRPCClient {
 
     // reset in-memory samples and hope that the beacon goes through for proper
     // collection of metrics
-    this.#clientSamples = [];
+    this.#cacheHits = [];
+    this.#inflightHits = [];
   };
 
   /**

@@ -278,13 +278,13 @@ export class DirectRPCClient {
    * internally collects collection of requests that were served from in-memory
    * cache, so that they can be sampled for popularity subsequently
    */
-  #cacheHits: DirectRPCRequest[] = [];
+  #cacheHits: Array<DirectRPCRequest & { blockHeight: string | undefined }> = [];
 
   /**
    * internally collects collection of requests that were served from in-memory
    * cache, so that they can be sampled for popularity subsequently
    */
-  #inflightHits: DirectRPCRequest[] = [];
+  #inflightHits: Array<DirectRPCRequest & { blockHeight: string | undefined }> = [];
 
   /**
    * specifies if this client instance has been destroyed, used to prevent
@@ -443,7 +443,7 @@ export class DirectRPCClient {
               cacheEntry.inception.blockHeight !== this.#currentBlockHeight?.value);
 
           if (!expiredByTimeToLive && !expiredByBlockHeight) {
-            this.#cacheHits.push(req);
+            this.#cacheHits.push({ ...req, blockHeight: this.#currentBlockHeight?.value });
 
             return cacheEntry.value;
           } else {
@@ -456,7 +456,7 @@ export class DirectRPCClient {
         const inflightPromise = this.#inflightCache.get(reqHash);
 
         if (inflightPromise) {
-          this.#inflightHits.push(req);
+          this.#inflightHits.push({ ...req, blockHeight: this.#currentBlockHeight?.value });
 
           return inflightPromise;
         }

@@ -2,7 +2,8 @@ const totalWeight = Symbol("totalWeighting");
 
 /**
  * inspired by the weighted library, this is a tiny implementation of a
- * randomized, weighted picker that we use to
+ * randomized, weighted picker that we use to choose between upstream provider
+ * nodes
  *
  * @see https://github.com/Schoonology/weighted/blob/master/lib/weighted.js#L28
  */

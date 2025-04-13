@@ -6,6 +6,7 @@ it("should encode+decode client metrics correctly", () => {
   const input: ClientReport = {
     cacheHits: [
       {
+        blockHeight: "0x1",
         id: 1,
         method: "eth_blockNumber",
         params: [],
@@ -13,6 +14,7 @@ it("should encode+decode client metrics correctly", () => {
     ],
     inflightHits: [
       {
+        blockHeight: "0x2",
         id: 1,
         method: "eth_blockNumber",
         params: [],

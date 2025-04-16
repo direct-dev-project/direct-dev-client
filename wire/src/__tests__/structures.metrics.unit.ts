@@ -6,7 +6,17 @@ it("should encode+decode client metrics correctly", () => {
   const input: ClientReport = {
     cacheHits: [
       {
+        timestamp: new Date(),
         blockHeight: "0x1",
+        id: 1,
+        method: "eth_blockNumber",
+        params: [],
+      },
+    ],
+    prefetchHits: [
+      {
+        timestamp: new Date(),
+        blockHeight: "0x2",
         id: 1,
         method: "eth_blockNumber",
         params: [],
@@ -14,7 +24,8 @@ it("should encode+decode client metrics correctly", () => {
     ],
     inflightHits: [
       {
-        blockHeight: "0x2",
+        timestamp: new Date(),
+        blockHeight: "0x3",
         id: 1,
         method: "eth_blockNumber",
         params: [],
@@ -24,6 +35,6 @@ it("should encode+decode client metrics correctly", () => {
   const encoded = clientReport.encode(input);
   const decoded = clientReport.decode(encoded);
 
-  expect(JSON.parse(JSON.stringify(decoded[0]))).toMatchObject(input);
+  expect(decoded[0]).toMatchObject(input);
   expect(decoded[1]).toEqual(encoded.length);
 });

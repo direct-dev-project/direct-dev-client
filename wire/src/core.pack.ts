@@ -731,6 +731,7 @@ export const WIRE_DICTIONARY = [
   "inflight",
   "ineligible",
   "prefetch",
+  "prefetch-hit",
 
   "wire",
   "ndjson",

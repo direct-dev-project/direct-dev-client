@@ -255,7 +255,7 @@ export class DirectRPCClient {
    * map of cacheable responses currently available locally, including their
    * expiration configurations
    */
-  #requestCache = new Map<RPCRequestHash, CacheEntry>();
+  #requestCache = new Map<RPCRequestHash, CacheEntry & { prefetched: boolean }>();
 
   /**
    * map of currently in-flight requests, which allows re-use of existing
@@ -279,13 +279,20 @@ export class DirectRPCClient {
    * internally collects collection of requests that were served from in-memory
    * cache, so that they can be sampled for popularity subsequently
    */
-  #cacheHits: Array<DirectRPCRequest & { blockHeight: string | undefined }> = [];
+  #cacheHits: wire.ClientReportEntry[] = [];
 
   /**
-   * internally collects collection of requests that were served from in-memory
-   * cache, so that they can be sampled for popularity subsequently
+   * internally collects collection of requests that were prefetched and
+   * subsequently served from in-memory cache, so that they can be sampled for
+   * popularity subsequently
    */
-  #inflightHits: Array<DirectRPCRequest & { blockHeight: string | undefined }> = [];
+  #prefetchHits: wire.ClientReportEntry[] = [];
+
+  /**
+   * internally collects collection of requests that were served from inflight
+   * uniqueness cache, so that they can be sampled for popularity subsequently
+   */
+  #inflightHits: wire.ClientReportEntry[] = [];
 
   /**
    * specifies if this client instance has been destroyed, used to prevent
@@ -434,7 +441,7 @@ export class DirectRPCClient {
       this.#currentBlockHeight?.value &&
       this.#currentBlockHeight.expiresAt.getTime() > Date.now()
     ) {
-      this.#cacheHits.push({ ...req, blockHeight: this.#currentBlockHeight?.value });
+      this.#cacheHits.push({ ...req, timestamp: new Date(), blockHeight: this.#currentBlockHeight?.value });
 
       return {
         id: req.id,
@@ -460,7 +467,11 @@ export class DirectRPCClient {
               cacheEntry.inception.blockHeight !== this.#currentBlockHeight?.value);
 
           if (!expiredByTimeToLive && !expiredByBlockHeight) {
-            this.#cacheHits.push({ ...req, blockHeight: this.#currentBlockHeight?.value });
+            (!cacheEntry.prefetched ? this.#cacheHits : this.#prefetchHits).push({
+              ...req,
+              timestamp: new Date(),
+              blockHeight: this.#currentBlockHeight?.value,
+            });
 
             return cacheEntry.value;
           } else {
@@ -473,7 +484,7 @@ export class DirectRPCClient {
         const inflightPromise = this.#inflightCache.get(reqHash);
 
         if (inflightPromise) {
-          this.#inflightHits.push({ ...req, blockHeight: this.#currentBlockHeight?.value });
+          this.#inflightHits.push({ ...req, timestamp: new Date(), blockHeight: this.#currentBlockHeight?.value });
 
           return inflightPromise;
         }
@@ -643,6 +654,10 @@ export class DirectRPCClient {
           inception: {
             blockHeight: this.#currentBlockHeight.value,
           },
+
+          // if response ID exceeds the bounds of incoming requests, it was
+          // predictively prefetched
+          prefetched: +response.id > requests.length,
         });
       }
     }
@@ -672,14 +687,16 @@ export class DirectRPCClient {
     ]
   > {
     const cacheHits = this.#cacheHits;
+    const prefetchHits = this.#prefetchHits;
     const inflightHits = this.#inflightHits;
 
     this.#cacheHits = [];
+    this.#prefetchHits = [];
     this.#inflightHits = [];
 
     // dispatch request including metrics data to the Direct.dev layer for
     // further processing
-    const response = await batch.dispatch({ cacheHits, inflightHits });
+    const response = await batch.dispatch({ cacheHits, prefetchHits, inflightHits });
 
     if (response) {
       // if things went OK, then reset any previously known backoff-settings
@@ -931,9 +948,10 @@ export class DirectRPCClient {
    */
   #sendBeacon = async () => {
     const cacheHits = this.#cacheHits;
+    const prefetchHits = this.#prefetchHits;
     const inflightHits = this.#inflightHits;
 
-    if (cacheHits.length === 0 && inflightHits.length === 0) {
+    if (cacheHits.length === 0 && prefetchHits.length === 0 && inflightHits.length === 0) {
       // avoid dispatching anything if there are no metrics to deliver to the
       // upstream
       return;
@@ -945,6 +963,7 @@ export class DirectRPCClient {
     encodeStream.close(
       wire.clientReport.encode({
         cacheHits,
+        prefetchHits,
         inflightHits,
       }),
     );
@@ -954,6 +973,7 @@ export class DirectRPCClient {
     // reset in-memory samples and hope that the beacon goes through for proper
     // collection of metrics
     this.#cacheHits = [];
+    this.#prefetchHits = [];
     this.#inflightHits = [];
   };
 

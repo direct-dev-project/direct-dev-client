@@ -21,6 +21,12 @@ export class PushableAsyncGenerator<T, TReturn = any> implements AsyncGenerator<
   #deferred: Array<Deferred<IteratorResult<T, TReturn>>> = [];
 
   /**
+   * collection of callbacks subscribed to items being pushed onto this
+   * generator in real time.
+   */
+  #taps = new Set<(value: T) => void>();
+
+  /**
    * cursor pointing to the next promise that should be read while iterating
    * through the stream
    */
@@ -39,6 +45,14 @@ export class PushableAsyncGenerator<T, TReturn = any> implements AsyncGenerator<
   }
 
   /**
+   * subscribe a callback to values being pushed onto this iterator, without
+   * modifying the stream of events.
+   */
+  tap(cb: (value: T) => void) {
+    this.#taps.add(cb);
+  }
+
+  /**
    * pushes a new value onto the generator at runtime
    */
   push(value: T) {
@@ -47,6 +61,7 @@ export class PushableAsyncGenerator<T, TReturn = any> implements AsyncGenerator<
     }
 
     (this.#deferred[this.#writeCursor++] ??= makeDeferred()).__resolve({ done: false, value });
+    this.#taps.forEach((cb) => cb(value));
   }
 
   /**

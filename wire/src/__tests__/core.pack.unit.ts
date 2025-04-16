@@ -33,7 +33,11 @@ describe("str", () => {
   });
 
   it("should fail gracefully if cursor is out-of-range", () => {
-    expect(unpack.str("abc", 10)).toEqual(["", 3]);
+    const input = "abc";
+    const output = unpack.str(input, 10);
+
+    expect(typeof output[0]).toEqual("string");
+    expect(output[1]).toBeGreaterThanOrEqual(input.length);
   });
 });
 

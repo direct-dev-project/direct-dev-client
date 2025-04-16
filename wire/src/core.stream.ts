@@ -1,6 +1,6 @@
 import { makeDeferred, PushableAsyncGenerator } from "@direct.dev/shared";
 
-import { pack, WIRE_ENCODE_OFFSET } from "./core.pack.js";
+import { WIRE_ENCODE_OFFSET } from "./core.pack.js";
 
 // ID of the Wire stream version, added to allow backwards compatible
 // versioning of wire encoder/decoders between backend and clients
@@ -34,11 +34,22 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
 
     // push individual items to the result stream
     for (const item of input) {
-      result += "0" + pack.str(encoder(item));
+      // @ENCODE STRING LENGTH
+      const str = encoder(item);
+      let len = str.length;
+      let prefix = "1";
+      while (len > 0) {
+        let byte = len & 0b00111111;
+        len >>= 6;
+        if (len > 0) byte |= 0b01000000;
+        prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      }
+
+      result += prefix + str;
     }
 
     // close the stream
-    return result + "2";
+    return result + "3";
   }
 
   /**
@@ -72,6 +83,12 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
   readonly #deferred = makeDeferred<undefined>();
 
   /**
+   * reference to the onCancel callback provided when creating the stream,
+   * allowing automatic clean up when receiver stops listening.
+   */
+  readonly #onCancelHandler?: (reason?: unknown) => void;
+
+  /**
    * provides an estimate of the combined size of all entries currently pushed
    * to the stream
    */
@@ -79,7 +96,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
     return this.#sizeInBytes;
   }
 
-  constructor(cb?: (push: (input: string) => void) => Promise<string | null | undefined> | string | null | undefined) {
+  constructor(config?: { sessionId?: string; onCancel?: (reason?: unknown) => void }) {
     // create a ref-object (inspired by React), so we can apply the controller
     // when it's provided in the start method below (which is executed prior to
     // the `super()` call resolving, thus resulting in a ReferenceError
@@ -94,16 +111,22 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
       },
     });
 
+    this.#onCancelHandler = config?.onCancel;
     this.#controllerRef = controllerRef;
     this.#controllerRef.current?.enqueue(this.#textEncoder.encode(VERSION_CHAR));
 
-    if (cb !== undefined) {
-      Promise.resolve(cb(this.push.bind(this)))
-        .then((res) => this.close(res))
-        .catch((err) => {
-          this.close();
-          throw err;
-        });
+    if (config?.sessionId !== undefined) {
+      // @ENCODE STRING LENGTH
+      let len = config.sessionId.length;
+      let prefix = "0";
+      while (len > 0) {
+        let byte = len & 0b00111111;
+        len >>= 6;
+        if (len > 0) byte |= 0b01000000;
+        prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      }
+
+      this.#controllerRef.current?.enqueue(this.#textEncoder.encode(prefix + config.sessionId));
     }
   }
 
@@ -113,7 +136,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
   push(input: string): void {
     // @ENCODE STRING LENGTH
     let len = input.length;
-    let prefix = "0";
+    let prefix = "1";
     while (len > 0) {
       let byte = len & 0b00111111;
       len >>= 6;
@@ -133,7 +156,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
     if (input != null) {
       // @ENCODE STRING LENGTH
       let len = input.length;
-      let prefix = "1";
+      let prefix = "2";
 
       while (len > 0) {
         let byte = len & 0b00111111;
@@ -146,7 +169,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
       this.#controllerRef.current?.close();
       this.#sizeInBytes += input.length + prefix.length;
     } else {
-      this.#controllerRef.current?.enqueue(this.#textEncoder.encode("2"));
+      this.#controllerRef.current?.enqueue(this.#textEncoder.encode("3"));
       this.#controllerRef.current?.close();
       this.#sizeInBytes += 1;
     }
@@ -159,6 +182,15 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
    */
   async wait(): Promise<void> {
     await this.#deferred;
+  }
+
+  /**
+   * intercept calls to "cancel", allowing integrations to register when a
+   * stream is closed and perform automatic clean-up.
+   */
+  cancel(reason?: unknown) {
+    this.#onCancelHandler?.();
+    return super.cancel(reason);
   }
 }
 
@@ -190,8 +222,8 @@ export class WireDecodeStream {
       let buffer = input.slice(1);
 
       while (buffer.length > 0) {
-        if (buffer.charCodeAt(0) === 50) {
-          // if we received a full-stop character ("2") then end the stream
+        if (buffer.charCodeAt(0) === 51) {
+          // if we received a full-stop character ("3") then end the stream
           // instantly
           return;
         }
@@ -211,30 +243,37 @@ export class WireDecodeStream {
         // stream includes the entirety of the encoded object, then perform
         // parsing
         if (!Number.isNaN(byte) && buffer.length >= cursor + len) {
-          const done = buffer.charCodeAt(0) === 49;
           const value = buffer.slice(cursor, cursor + len);
 
-          if (!done) {
-            // yield the decoded entry
-            push({
-              done: false,
-              value: await transformEntry(value, wireVersion),
-              version: wireVersion,
-            });
+          switch (buffer.charCodeAt(0)) {
+            // "0" (we received a session ID - cannot emit when reading from
+            // string)
+            case 48:
+              throw new Error("WireDecodeStream.fromString(): does not support streams including session IDs");
 
-            // slice the buffer, so that the previously emitted value is no
-            // longer retained in-memory
-            buffer = buffer.slice(cursor + len);
-          } else {
-            // if we get here, the final response has been received - emit it
-            // and break further execution
-            push({
-              done: true,
-              value: await transformDone(value, wireVersion),
-              version: wireVersion,
-            });
-            return;
+            // "1" (we received an entry)
+            case 49:
+              // yield the decoded entry
+              push({
+                done: false,
+                value: await transformEntry(value, wireVersion),
+                version: wireVersion,
+              });
+              break;
+
+            // "2" (we're done, received a final value)
+            case 50:
+              push({
+                done: true,
+                value: await transformDone(value, wireVersion),
+                version: wireVersion,
+              });
+              return;
           }
+
+          // slice the buffer, so that the previously emitted value is no
+          // longer retained in-memory
+          buffer = buffer.slice(cursor + len);
         } else {
           break;
         }
@@ -248,6 +287,11 @@ export class WireDecodeStream {
    * data.
    */
   readonly version = makeDeferred<number>();
+
+  /**
+   * exposes the session ID associated with this stream (if any).
+   */
+  readonly sessionId = makeDeferred<string | undefined>();
 
   /**
    * the provided readable stream, from which entries will be read and emitted
@@ -295,8 +339,8 @@ export class WireDecodeStream {
         }
 
         while (this.#buffer.length > 0) {
-          if (this.#buffer.charCodeAt(0) === 50) {
-            // if we received a full-stop character ("2") then end the stream
+          if (this.#buffer.charCodeAt(0) === 51) {
+            // if we received a full-stop character ("3") then end the stream
             // instantly
             return;
           }
@@ -316,30 +360,37 @@ export class WireDecodeStream {
           // stream includes the entirety of the encoded object, then perform
           // parsing
           if (!Number.isNaN(byte) && this.#buffer.length >= cursor + len) {
-            const done = this.#buffer.charCodeAt(0) === 49;
             const value = this.#buffer.slice(cursor, cursor + len);
 
-            if (!done) {
-              // yield the decoded entry
-              yield {
-                done: false,
-                value: await transformEntry(value, wireVersion),
-                version: wireVersion,
-              };
+            switch (this.#buffer.charCodeAt(0)) {
+              // "0" (we received a session ID)
+              case 48:
+                this.sessionId.__resolve(value);
+                break;
 
-              // slice the buffer, so that the previously emitted value is no
-              // longer retained in-memory
-              this.#buffer = this.#buffer.slice(cursor + len);
-            } else {
-              // if we get here, the final response has been received - emit it
-              // and break further execution
-              yield {
-                done: true,
-                value: await transformDone(value, wireVersion),
-                version: wireVersion,
-              };
-              return;
+              // "1" (we received an entry)
+              case 49:
+                // yield the decoded entry
+                yield {
+                  done: false,
+                  value: await transformEntry(value, wireVersion),
+                  version: wireVersion,
+                };
+                break;
+
+              // "2" (we're done, received a final value)
+              case 50:
+                yield {
+                  done: true,
+                  value: await transformDone(value, wireVersion),
+                  version: wireVersion,
+                };
+                return;
             }
+
+            // slice the buffer, so that the previously emitted value is no
+            // longer retained in-memory
+            this.#buffer = this.#buffer.slice(cursor + len);
           } else {
             break;
           }

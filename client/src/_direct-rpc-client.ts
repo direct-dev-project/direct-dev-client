@@ -23,6 +23,7 @@ import { wire, WireDecodeStream, WireEncodeStream } from "@direct.dev/wire";
 import type { BatchConfig, DirectRPCBatch } from "./batch.core.js";
 import { isRpcErrorResponse, isRpcRequest, isRpcSuccessResponse } from "./guards.js";
 import { createBatch } from "./util.create-batch.js";
+import { generateSessionId } from "./util.generate-session-id.js";
 import { isSupportedRequest } from "./util.is-supported-request.js";
 import { normalizeContextFromUrl } from "./util.normalize-url.js";
 
@@ -325,6 +326,7 @@ export class DirectRPCClient {
     // prepare configurations for handling batches of requests
     this.#batchWindowMs = config.batchWindowMs ?? 25;
     this.#batchConfig = {
+      sessionId: generateSessionId(),
       endpointUrl: this.endpointUrl + (config.preferJSON ? "/ndjson" : ""),
       preferJSON: config.preferJSON,
       isHttps: config.baseUrl ? config.baseUrl.startsWith("https://") : false,
@@ -426,6 +428,20 @@ export class DirectRPCClient {
       throw new Error("#fetch(): called after destroying the client instance.");
     }
 
+    // deliver eth_blockNumber from in-memory cache if available
+    if (
+      req.method === "eth_blockNumber" &&
+      this.#currentBlockHeight?.value &&
+      this.#currentBlockHeight.expiresAt.getTime() > Date.now()
+    ) {
+      this.#cacheHits.push({ ...req, blockHeight: this.#currentBlockHeight?.value });
+
+      return {
+        id: req.id,
+        result: this.#currentBlockHeight,
+      };
+    }
+
     return (
       (async () => {
         const cacheEntry = this.#requestCache.get(reqHash);
@@ -433,13 +449,14 @@ export class DirectRPCClient {
         // if the request has been previously cached, determine if it is still
         // fresh and return directly from there
         if (cacheEntry) {
-          const now = new Date();
+          const now = Date.now();
 
-          const expiredByTimeToLive = cacheEntry.expiration.expiresAt && cacheEntry.expiration.expiresAt < now;
+          const expiredByTimeToLive =
+            cacheEntry.expiration.expiresAt && cacheEntry.expiration.expiresAt.getTime() < now;
           const expiredByBlockHeight =
             cacheEntry.expiration.whenBlockHeightChanges &&
             (this.#currentBlockHeight == null ||
-              this.#currentBlockHeight.expiresAt < now ||
+              this.#currentBlockHeight.expiresAt.getTime() < now ||
               cacheEntry.inception.blockHeight !== this.#currentBlockHeight?.value);
 
           if (!expiredByTimeToLive && !expiredByBlockHeight) {
@@ -521,29 +538,13 @@ export class DirectRPCClient {
     const currBatch = this.#currBatch;
     this.#currBatch = undefined;
 
-    // if the current block height is no longer guaranteed to be valid, then
-    // re-fetch primer package
-    //
-    // (this is only a temporary meassure, until we are ready to implement
-    // predictive prefetching for real)
-    if (!this.#currentBlockHeight || this.#currentBlockHeight.expiresAt < new Date()) {
-      const requests = await currBatch.requests;
-
-      if (!requests.some((req) => req.method === "direct_primer")) {
-        currBatch.push({
-          id: 0,
-          method: "direct_primer",
-          params: [normalizeContextFromUrl(typeof window !== "undefined" ? window.location.href : "/")],
-        });
-      }
-    }
-
     // re-map ids on requests, so that they're equal to the index of the
     // request in the batch list (this is useful when receiving responses as
     // it allows us to quickly identify the associated request hash and
     // resolve the correct inflight promise)
     const requests = await currBatch.requests;
     const requestHashes = await Promise.all(requests.map((it) => wire.hashRPCRequest(it)));
+    const predictions: string[] = [];
     const remainingRequestHashes = new Set(requestHashes);
 
     // perform request to upstream, and handle responses by resolving batched
@@ -581,6 +582,7 @@ export class DirectRPCClient {
 
           // update internal state to reflect the predicted request
           requestHashes.push(predictedReqHash);
+          predictions.push(predictedReqHash);
           remainingRequestHashes.add(predictedReqHash);
         }
 
@@ -608,6 +610,10 @@ export class DirectRPCClient {
         this.#logger.error(
           "#dispatchBatch",
           `could not map response ID '${response.id}' to request hash, unable to resolve response`,
+
+          requestHashes,
+          predictions,
+          response,
         );
         continue;
       }
@@ -627,16 +633,12 @@ export class DirectRPCClient {
 
       this.#inflightCache.get(reqHash)?.__resolve(output);
 
-      if (
-        reqHash &&
-        ("expiresWhenBlockHeightChanges" in response || "expiresAt" in response) &&
-        this.#currentBlockHeight
-      ) {
+      if (reqHash && "result" in response && this.#currentBlockHeight) {
         this.#requestCache.set(reqHash, {
           value: output,
           expiration: {
             whenBlockHeightChanges: response.expiresWhenBlockHeightChanges ?? false,
-            expiresAt: response.expiresAt ? new Date(response.expiresAt) : undefined,
+            expiresAt: response.expiresAt ?? undefined,
           },
           inception: {
             blockHeight: this.#currentBlockHeight.value,

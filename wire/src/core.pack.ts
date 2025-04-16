@@ -333,7 +333,7 @@ export const unpack = {
 
     cursor++;
 
-    return len > 0 ? [input.slice(cursor, cursor + len), cursor + len] : [input.slice(cursor), input.length];
+    return [input.slice(cursor, cursor + len), cursor + len];
   },
 
   nullableStr(input: string, cursor: number): [string | null | undefined, number] {
@@ -365,7 +365,7 @@ export const unpack = {
 
     cursor++;
 
-    return len > 0 ? [input.slice(cursor, cursor + len), cursor + len] : [input.slice(cursor), input.length];
+    return [input.slice(cursor, cursor + len), cursor + len];
   },
 
   strOrNum(input: string, cursor: number): [string | number, number] {
@@ -398,7 +398,7 @@ export const unpack = {
 
     cursor++;
 
-    return len > 0 ? [input.slice(cursor, cursor + len), cursor + len] : [input.slice(cursor), input.length];
+    return [input.slice(cursor, cursor + len), cursor + len];
   },
 
   nullableStrOrNum(input: string, cursor: number): [string | number | null | undefined, number] {
@@ -440,7 +440,7 @@ export const unpack = {
 
     cursor++;
 
-    return len > 0 ? [input.slice(cursor, cursor + len), cursor + len] : [input.slice(cursor), input.length];
+    return [input.slice(cursor, cursor + len), cursor + len];
   },
 
   num(input: string, cursor: number): [number, number] {
@@ -624,7 +624,7 @@ export const unpack = {
 
     cursor++;
 
-    return len > 0 ? [input.slice(cursor, cursor + len), cursor + len] : [input.slice(cursor), input.length];
+    return [input.slice(cursor, cursor + len), cursor + len];
   },
 
   arr<T>(input: string, cursor: number, unpack: (cursor: number) => [T, number]): [T[], number] {
@@ -678,9 +678,7 @@ export const unpack = {
 
     cursor++;
 
-    return len > 0
-      ? [JSON.parse(input.slice(cursor, cursor + len)), cursor + len]
-      : [JSON.parse(input.slice(cursor)), input.length];
+    return [JSON.parse(input.slice(cursor, cursor + len)), cursor + len];
   },
 };
 

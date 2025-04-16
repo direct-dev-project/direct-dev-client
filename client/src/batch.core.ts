@@ -10,6 +10,11 @@ import { WireDecodeStream, wire, WireEncodeStream } from "@direct.dev/wire";
 
 export type BatchConfig = {
   /**
+   * session ID associated with the client creating this batch.
+   */
+  sessionId: string;
+
+  /**
    * specifies the Direct.dev endpoint, which this batch should be transmitted
    * to.
    */
@@ -70,17 +75,22 @@ export abstract class DirectRPCBatch {
     if (!config.preferJSON) {
       // by default we use a WireStream and encode content using the
       // appropriate Wire packers
-      this.bodyStream = new WireEncodeStream(async (push) => {
+      const wireStream = new WireEncodeStream(config);
+
+      (async () => {
         let result: IteratorResult<DirectRPCRequest, wire.ClientReport>;
 
         while ((result = await this.#requests.next()).value) {
           if (result.done) {
-            return wire.clientReport.encode(result.value);
+            wireStream.close(wire.clientReport.encode(result.value));
+            return;
           }
 
-          push(wire.RPCRequest.encode(result.value));
+          wireStream.push(wire.RPCRequest.encode(result.value));
         }
-      });
+      })();
+
+      this.bodyStream = wireStream;
     } else {
       // if we're using NDJSON, then create a plain NDJSON stream and manually
       // encode requests as they are being pushed to the batch
@@ -88,6 +98,9 @@ export abstract class DirectRPCBatch {
 
       this.bodyStream = new ReadableStream({
         start: async (controller) => {
+          // push the sessionID as the first entry on the stream
+          controller.enqueue(encoder.encode(JSON.stringify(config.sessionId) + "\n"));
+
           for await (const request of this.#requests) {
             controller.enqueue(encoder.encode(JSON.stringify(request) + "\n"));
           }
@@ -174,7 +187,21 @@ export abstract class DirectRPCBatch {
       } else {
         return (async function* parse() {
           for await (const value of makeGeneratorFromNDJson(resBody)) {
-            yield { done: false, value: value as DirectRPCHead | DirectRPCSuccessResponse | DirectRPCErrorResponse };
+            const typedVal = value as DirectRPCHead | DirectRPCSuccessResponse | DirectRPCErrorResponse;
+
+            // convert dates back to date-objects to mimic behaviour of Wire
+            if ("blockHeightExpiresAt" in typedVal && typedVal.blockHeightExpiresAt) {
+              typedVal.blockHeightExpiresAt = new Date(typedVal.blockHeightExpiresAt);
+            }
+
+            if ("expiresAt" in typedVal && typedVal.expiresAt) {
+              typedVal.expiresAt = new Date(typedVal.expiresAt);
+            }
+
+            yield {
+              done: false,
+              value: typedVal,
+            };
           }
         })();
       }

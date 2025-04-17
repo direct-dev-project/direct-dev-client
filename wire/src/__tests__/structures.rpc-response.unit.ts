@@ -1,10 +1,11 @@
 import { it, expect } from "vitest";
 
+import { sha256 } from "../hashing.sha256.js";
 import { RPCResponse, type RPCResponseStructure } from "../structures.rpc-response.js";
 
-it("should encode+decode direct_head correctly", () => {
+it("should encode+decode direct_head correctly", async () => {
   const input: RPCResponseStructure = {
-    predictions: ["a", "b", "c"],
+    predictions: [await sha256("a"), await sha256("b"), await sha256("c")],
     blockHeight: "0x01",
     blockHeightExpiresAt: null,
   };

@@ -56,6 +56,12 @@ export const pack = {
     return prefix + input;
   },
 
+  sha256(input: string): string {
+    // hashes are fixed-length at 37 characters, as a result of the base-128
+    // encoded 256 bit hash; add as-is
+    return input;
+  },
+
   nullableStr(input: string | null | undefined): string {
     // @ENCODE NULLABLE
     if (input == null) {
@@ -334,6 +340,10 @@ export const unpack = {
     cursor++;
 
     return [input.slice(cursor, cursor + len), cursor + len];
+  },
+
+  sha256(input: string, cursor: number): [string, number] {
+    return [input.slice(cursor, cursor + 37), cursor + 37];
   },
 
   nullableStr(input: string, cursor: number): [string | null | undefined, number] {

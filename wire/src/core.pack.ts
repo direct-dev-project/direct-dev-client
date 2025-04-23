@@ -56,6 +56,120 @@ export const pack = {
     return prefix + input;
   },
 
+  hex(input: string): string {
+    if (input.charCodeAt(0) !== 48 || input.charCodeAt(1) !== 120 || input.length === 2) {
+      // encode as regular string, if not starting with 0x
+      return pack.str(input);
+    }
+
+    //
+    // STEP: scan through the entire input, and identify the 127 longest
+    // sequences of repeated 0s (up to 64 repeated occurrences) to get maximum
+    // benefit of RLE
+    //
+
+    let RLEs: Array<[start: number, len: number]> = [];
+    let cursor = 0;
+    input = input.slice(2);
+
+    do {
+      if (input.charCodeAt(cursor) !== 48) {
+        cursor++;
+        continue;
+      }
+
+      const start = cursor;
+
+      // identify sequences of repeated zeros
+      do {
+        cursor++;
+      } while (input.charCodeAt(cursor) === 48 && cursor - start < 64);
+
+      if (cursor - start >= 4) {
+        RLEs.push([start, cursor - start]);
+      }
+    } while (cursor < input.length && cursor < 2_000); // never scan more than 2 KB of data
+
+    if (RLEs.length === 0) {
+      // fast-path encoding if no repeated sequences were found
+      return pack.str(input);
+    }
+
+    RLEs = RLEs.sort((a, b) => b[1] - a[1])
+      .slice(0, 50)
+      .sort((a, b) => a[0] - b[0]);
+
+    //
+    // STEP: extract string without including the longest repeated sequences
+    //
+
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    let trimmed = input.slice(0, RLEs[0]![0]);
+
+    for (let i = 1; i < RLEs.length; i++) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      trimmed += input.slice(RLEs[i - 1]![0] + RLEs[i - 1]![1], RLEs[i]![0]);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    trimmed += input.slice(RLEs.at(-1)![0] + RLEs.at(-1)![1]);
+
+    //
+    // STEP: encode the trimmed string and all RLE segments
+    //
+
+    // @ENCODE STRING LENGTH
+    // add 1st bit, which causes an extra byte when encoding to UTF-8 but allows
+    // very fast marker detection for compressed hex encoding when decoding
+    //
+    // and our assumption is that this encoding still shaves off a significant
+    // amount of size, so the extra byte is not an issue
+    let len = trimmed.length;
+    let res = "";
+
+    let byte = (len & 0b00111111) | 0b10000000;
+    len >>= 6;
+    if (len > 0) byte |= 0b01000000;
+    res += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+
+    while (len > 0) {
+      let byte = len & 0b00111111;
+      len >>= 6;
+      if (len > 0) byte |= 0b01000000;
+      res += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+    }
+
+    // @ENCODE ARR + @ENCODE INT
+    // push all RLEs to the final output, so we can rebuild the correct string
+    // when unpacking
+    res += String.fromCharCode(RLEs.length + WIRE_ENCODE_OFFSET);
+
+    let rleChars = 0;
+
+    for (const RLE of RLEs) {
+      res += String.fromCharCode(RLE[1] + WIRE_ENCODE_OFFSET);
+
+      let len = RLE[0] - rleChars;
+
+      do {
+        let byte = len & 0b00111111;
+        len >>= 6;
+        if (len > 0) byte |= 0b01000000;
+        res += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      } while (len > 0);
+
+      rleChars += RLE[1];
+    }
+
+    // if we cannot compress output enough (at least 15% or 100 bytes), then
+    // revert to plain string packing for faster decoding
+    if (res.length + trimmed.length > input.length * 0.85 && input.length - res.length - trimmed.length > 100) {
+      return pack.str(input);
+    }
+
+    return res + trimmed;
+  },
+
   sha256(input: string): string {
     // hashes are fixed-length at 37 characters, as a result of the base-128
     // encoded 256 bit hash; add as-is
@@ -340,6 +454,70 @@ export const unpack = {
     cursor++;
 
     return [input.slice(cursor, cursor + len), cursor + len];
+  },
+
+  hex(input: string, cursor: number): [string, number] {
+    const first = input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
+    if ((first & 0b10000000) === 0) {
+      // fast-path: not a packed hex string, fallback to regular string
+      // unpacking
+      return unpack.str(input, cursor);
+    }
+
+    //
+    // STEP: read trimmed string
+    //
+
+    // @DECODE STRING LENGTH
+    let byte = input.charCodeAt(cursor++) - WIRE_ENCODE_OFFSET;
+    let len = byte & 0b00111111;
+    let shift = 1;
+
+    while (byte & 0b01000000) {
+      byte = input.charCodeAt(cursor++) - WIRE_ENCODE_OFFSET;
+      len |= (byte & 0b00111111) << (shift++ * 6);
+    }
+
+    //
+    // STEP: read RLE metadata
+    //
+
+    const rleCount = input.charCodeAt(cursor++) - WIRE_ENCODE_OFFSET;
+    const RLEs = new Array<[start: number, len: number]>(rleCount);
+
+    for (let i = 0; i < rleCount; i++) {
+      const rleLen = input.charCodeAt(cursor++);
+
+      // @DECODE INT
+      let offset = 0;
+      let shift = 0;
+      let byte: number;
+
+      do {
+        byte = input.charCodeAt(cursor++) - WIRE_ENCODE_OFFSET;
+        offset |= (byte & 0b00111111) << (shift++ * 6);
+      } while (byte & 0b01000000);
+
+      RLEs[i] = [offset, rleLen];
+    }
+
+    //
+    // STEP: reconstruct full string
+    //
+
+    let res = "";
+    let tCursor = 0;
+
+    for (const RLE of RLEs) {
+      // Add next trimmed chunk
+      res += input.slice(cursor + tCursor, RLE[0]) + UNPACK_HEX_DICT[RLE[1]];
+      tCursor = RLE[0] - RLE[1];
+    }
+
+    // Add final remainder of trimmed string
+    res += input.slice(cursor + tCursor, cursor + len);
+
+    return ["0x" + res, cursor + len];
   },
 
   sha256(input: string, cursor: number): [string, number] {
@@ -761,3 +939,13 @@ const DICTIONARY_TO_CHAR = new Map(
   WIRE_DICTIONARY.map((word, index) => [word, String.fromCharCode(DICTIONARY_OFFSET + WIRE_ENCODE_OFFSET + index)]),
 );
 const DICTIONARY_FROM_CODE = new Map(WIRE_DICTIONARY.map((word, index) => [DICTIONARY_OFFSET + index, word]));
+
+//
+// Dictionary for blazingly fast unpacking of compressed hex values
+//
+
+const UNPACK_HEX_DICT: Record<number, string> = {};
+
+for (let i = 4; i <= 64; i++) {
+  UNPACK_HEX_DICT[i] = "0".repeat(i);
+}

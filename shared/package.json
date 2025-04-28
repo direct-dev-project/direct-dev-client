@@ -1,6 +1,6 @@
 {
   "name": "@direct.dev/shared",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/direct-dev-project/direct-dev-client.git"

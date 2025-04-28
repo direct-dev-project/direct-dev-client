@@ -1,5 +1,16 @@
 # @direct.dev/wire
 
+## 0.3.0
+
+### Minor Changes
+
+- 2137685: optimize critical request path for performance
+
+### Patch Changes
+
+- Updated dependencies [2137685]
+  - @direct.dev/shared@0.3.0
+
 ## 0.2.0
 
 ### Patch Changes

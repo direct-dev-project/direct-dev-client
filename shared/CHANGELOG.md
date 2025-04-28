@@ -1,5 +1,11 @@
 # @direct.dev/shared
 
+## 0.3.0
+
+### Minor Changes
+
+- 2137685: optimize critical request path for performance
+
 ## 0.2.0
 
 ## 0.1.3

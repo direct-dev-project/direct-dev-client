@@ -8,7 +8,11 @@ export type RPCResponseStructure = DirectRPCSuccessResponse | DirectRPCErrorResp
 /**
  * implementation of WirePackers for common eth response signatures
  */
-export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string | null | undefined]>(
+export const RPCResponse = new Wire<
+  RPCResponseStructure,
+  | [requestMethod: string | null | undefined]
+  | [requestMethod: string | null | undefined, options: { compress: boolean }]
+>(
   {
     //
     // Direct.dev proprietary response structures
@@ -57,8 +61,33 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
     // the specific responses
     //
 
-    rpc_success__primitive: {
+    rpc_success__compressed: {
       id: 3,
+      encode: (input) =>
+        pack.strOrNum((input as DirectRPCSuccessResponse).id) +
+        pack.nullableBool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges) +
+        pack.nullableDate((input as DirectRPCSuccessResponse).expiresAt) +
+        pack.rleStr((input as DirectRPCSuccessResponse).result as string),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const expiresWhenBlockHeightChanges = unpack.nullableBool(input, id[1]);
+        const expiresAt = unpack.nullableDate(input, expiresWhenBlockHeightChanges[1]);
+        const result = unpack.rleStr(input, expiresAt[1]);
+
+        return [
+          {
+            id: id[0],
+            result: result[0],
+            expiresWhenBlockHeightChanges: expiresWhenBlockHeightChanges[0],
+            expiresAt: expiresAt[0],
+          },
+          result[1],
+        ];
+      },
+    },
+
+    rpc_success__primitive: {
+      id: 4,
       encode: (input) =>
         pack.strOrNum((input as DirectRPCSuccessResponse).id) +
         pack.nullableBool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges) +
@@ -83,7 +112,7 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
     },
 
     rpc_success__json: {
-      id: 4,
+      id: 5,
       encode: (input) =>
         pack.strOrNum((input as DirectRPCSuccessResponse).id) +
         pack.nullableBool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges) +
@@ -108,7 +137,7 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
     },
 
     rpc_error: {
-      id: 5,
+      id: 6,
       encode: (input) =>
         pack.strOrNum((input as DirectRPCErrorResponse).id) +
         pack.num((input as DirectRPCErrorResponse).error.code) +
@@ -134,7 +163,7 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
       },
     },
   },
-  (input, [requestMethod]) => {
+  (input, [requestMethod, options]) => {
     if ("result" in input) {
       switch (requestMethod) {
         case "direct_primer":
@@ -142,10 +171,12 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
 
         default:
           switch (typeof input.result) {
+            case "string":
+              return options?.compress ? "rpc_success__compressed" : "rpc_success__primitive";
+
             case "bigint":
             case "boolean":
             case "number":
-            case "string":
             case "undefined":
               return "rpc_success__primitive";
 

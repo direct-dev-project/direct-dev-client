@@ -1,4 +1,4 @@
-import { pack, unpack, WIRE_ENCODE_OFFSET } from "./core.pack.js";
+import { pack, unpack } from "./core.pack.js";
 import { sha256 } from "./hashing.sha256.js";
 import { sortObject } from "./hashing.sort-object.js";
 
@@ -103,12 +103,12 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
           throw new Error(`new Wire(): structure IDs must be greater than 0 (${packer.id})`);
         }
 
-        if (this.#idMap.has(packer.id + WIRE_ENCODE_OFFSET)) {
+        if (this.#idMap.has(packer.id)) {
           throw new Error(`new Wire(): multiple structures cannot own the same structure ID '${packer.id}' (${key})`);
         }
 
         this.#keyMap.set(key, packer);
-        this.#idMap.set(packer.id + WIRE_ENCODE_OFFSET, packer);
+        this.#idMap.set(packer.id, packer);
       });
     }
   }
@@ -128,8 +128,8 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
     const packer = this.#keyMap.get(this.#encodeMapper(input, extraArgs));
 
     return packer
-      ? String.fromCharCode(packer.id + WIRE_ENCODE_OFFSET) + packer.encode(input, extraArgs)
-      : String.fromCharCode(WIRE_ENCODE_OFFSET) + pack.json(input);
+      ? String.fromCharCode(packer.id) + packer.encode(input, extraArgs)
+      : String.fromCharCode(0) + pack.json(input);
   }
 
   /**
@@ -145,8 +145,8 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
 
     return sha256(
       packer
-        ? (encodedStr ?? String.fromCharCode(packer.id + WIRE_ENCODE_OFFSET) + packer.encode(input, extraArgs))
-        : String.fromCharCode(WIRE_ENCODE_OFFSET) + sortObject(input),
+        ? (encodedStr ?? String.fromCharCode(packer.id) + packer.encode(input, extraArgs))
+        : String.fromCharCode(0) + sortObject(input),
     );
   }
 
@@ -162,7 +162,7 @@ export class Wire<T, TExtraEncodeArgs extends any[] = []> {
       return this.#singlePacker.decode(input, cursor);
     }
 
-    const packer = this.#idMap.get(input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET);
+    const packer = this.#idMap.get(input.charCodeAt(cursor));
 
     return packer ? packer.decode(input, cursor + 1) : (unpack.json(input, cursor + 1) as [T, number]);
   }

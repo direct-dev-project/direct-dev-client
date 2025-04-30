@@ -1,7 +1,5 @@
 import { makeDeferred, PushableAsyncGenerator } from "@direct.dev/shared";
 
-import { WIRE_ENCODE_OFFSET } from "./core.pack.js";
-
 // ID of the Wire stream version, added to allow backwards compatible
 // versioning of wire encoder/decoders between backend and clients
 const VERSION_ID = 1;
@@ -42,7 +40,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
         let byte = len & 0b00111111;
         len >>= 6;
         if (len > 0) byte |= 0b01000000;
-        prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+        prefix += String.fromCharCode(byte);
       }
 
       result += prefix + str;
@@ -123,7 +121,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
         let byte = len & 0b00111111;
         len >>= 6;
         if (len > 0) byte |= 0b01000000;
-        prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+        prefix += String.fromCharCode(byte);
       }
 
       this.#controllerRef.current?.enqueue(this.#textEncoder.encode(prefix + config.sessionId));
@@ -141,7 +139,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
       let byte = len & 0b00111111;
       len >>= 6;
       if (len > 0) byte |= 0b01000000;
-      prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      prefix += String.fromCharCode(byte);
     }
 
     this.#controllerRef.current?.enqueue(this.#textEncoder.encode(prefix + input));
@@ -162,7 +160,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
         let byte = len & 0b00111111;
         len >>= 6;
         if (len > 0) byte |= 0b01000000;
-        prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+        prefix += String.fromCharCode(byte);
       }
 
       this.#controllerRef.current?.enqueue(this.#textEncoder.encode(prefix + input));
@@ -235,7 +233,7 @@ export class WireDecodeStream {
         let byte;
 
         do {
-          byte = buffer.charCodeAt(cursor++) - WIRE_ENCODE_OFFSET;
+          byte = buffer.charCodeAt(cursor++);
           len |= (byte & 0b00111111) << (shift++ * 6);
         } while (byte & 0b01000000);
 
@@ -352,7 +350,7 @@ export class WireDecodeStream {
           let byte;
 
           do {
-            byte = this.#buffer.charCodeAt(cursor++) - WIRE_ENCODE_OFFSET;
+            byte = this.#buffer.charCodeAt(cursor++);
             len |= (byte & 0b00111111) << (shift++ * 6);
           } while (byte & 0b01000000);
 

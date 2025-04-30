@@ -86,7 +86,7 @@ export abstract class DirectRPCBatch {
             return;
           }
 
-          wireStream.push(wire.RPCRequest.encode(result.value));
+          wireStream.push(wire.RPCRequest.encode(result.value, { compress: true }));
         }
       })();
 

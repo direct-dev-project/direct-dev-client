@@ -50,20 +50,20 @@ export const pack = {
       let byte = len & 0b00111111;
       len >>= 6;
       if (len > 0) byte |= 0b01000000;
-      prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      prefix += String.fromCharCode(byte);
     } while (len > 0);
 
     return prefix + input;
   },
 
-  hex(input: string): string {
+  rleStr(input: string): string {
     if (input.charCodeAt(0) !== 48 || input.charCodeAt(1) !== 120 || input.length === 2) {
-      // encode as regular string, if not starting with 0x
+      // encode as regular string, if input does not start with 0x
       return pack.str(input);
     }
 
     //
-    // STEP: scan through the entire input, and identify the 127 longest
+    // STEP: scan through the entire input, and identify the 50 longest
     // sequences of repeated 0s (up to 64 repeated occurrences) to get maximum
     // benefit of RLE
     //
@@ -88,11 +88,11 @@ export const pack = {
       if (cursor - start >= 4) {
         RLEs.push([start, cursor - start]);
       }
-    } while (cursor < input.length && cursor < 2_000); // never scan more than 2 KB of data
+    } while (cursor < input.length && cursor < 2_000); // never scan more than 2 KB of data to avoid CPU overload
 
     if (RLEs.length === 0) {
       // fast-path encoding if no repeated sequences were found
-      return pack.str(input);
+      return pack.str("0x" + input);
     }
 
     RLEs = RLEs.sort((a, b) => b[1] - a[1])
@@ -119,10 +119,11 @@ export const pack = {
     //
 
     // @ENCODE STRING LENGTH
-    // add 1st bit, which causes an extra byte when encoding to UTF-8 but allows
-    // very fast marker detection for compressed hex encoding when decoding
+    // set 1st bit in code point byte, which causes an extra byte when encoding
+    // to UTF-8 but allows very fast marker detection for compressed hex
+    // encoding when decoding
     //
-    // and our assumption is that this encoding still shaves off a significant
+    // our assumption is that this encoding still shaves off a significant
     // amount of size, so the extra byte is not an issue
     let len = trimmed.length;
     let res = "";
@@ -130,24 +131,24 @@ export const pack = {
     let byte = (len & 0b00111111) | 0b10000000;
     len >>= 6;
     if (len > 0) byte |= 0b01000000;
-    res += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+    res += String.fromCharCode(byte);
 
     while (len > 0) {
       let byte = len & 0b00111111;
       len >>= 6;
       if (len > 0) byte |= 0b01000000;
-      res += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      res += String.fromCharCode(byte);
     }
 
     // @ENCODE ARR + @ENCODE INT
     // push all RLEs to the final output, so we can rebuild the correct string
     // when unpacking
-    res += String.fromCharCode(RLEs.length + WIRE_ENCODE_OFFSET);
+    res += String.fromCharCode(RLEs.length);
 
     let rleChars = 0;
 
     for (const RLE of RLEs) {
-      res += String.fromCharCode(RLE[1] + WIRE_ENCODE_OFFSET);
+      res += String.fromCharCode(RLE[1]);
 
       let len = RLE[0] - rleChars;
 
@@ -155,7 +156,7 @@ export const pack = {
         let byte = len & 0b00111111;
         len >>= 6;
         if (len > 0) byte |= 0b01000000;
-        res += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+        res += String.fromCharCode(byte);
       } while (len > 0);
 
       rleChars += RLE[1];
@@ -164,7 +165,7 @@ export const pack = {
     // if we cannot compress output enough (at least 15% or 100 bytes), then
     // revert to plain string packing for faster decoding
     if (res.length + trimmed.length > input.length * 0.85 && input.length - res.length - trimmed.length > 100) {
-      return pack.str(input);
+      return pack.str("0x" + input);
     }
 
     return res + trimmed;
@@ -196,7 +197,7 @@ export const pack = {
       let byte = len & 0b00111111;
       len >>= 6;
       if (len > 0) byte |= 0b01000000;
-      prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      prefix += String.fromCharCode(byte);
     } while (len > 0);
 
     return prefix + input;
@@ -222,7 +223,7 @@ export const pack = {
       let byte = len & 0b00111111;
       len >>= 6;
       if (len > 0) byte |= 0b01000000;
-      prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      prefix += String.fromCharCode(byte);
     } while (len > 0);
 
     return prefix + input;
@@ -253,7 +254,7 @@ export const pack = {
       let byte = len & 0b00111111;
       len >>= 6;
       if (len > 0) byte |= 0b01000000;
-      prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      prefix += String.fromCharCode(byte);
     } while (len > 0);
 
     return prefix + input;
@@ -282,7 +283,7 @@ export const pack = {
       let byte = input & 0b00111111;
       input >>= 6;
       if (input > 0) byte |= 0b01000000;
-      res += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      res += String.fromCharCode(byte);
     } while (input > 0);
 
     return res;
@@ -301,7 +302,7 @@ export const pack = {
       let byte = input & 0b00111111;
       input >>= 6;
       if (input > 0) byte |= 0b01000000;
-      res += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      res += String.fromCharCode(byte);
     } while (input > 0);
 
     return res;
@@ -313,13 +314,13 @@ export const pack = {
     const ms = input.getMilliseconds();
 
     return (
-      String.fromCharCode((timeStamp & 0b01111111) + WIRE_ENCODE_OFFSET) +
-      String.fromCharCode(((timeStamp >> 7) & 0b01111111) + WIRE_ENCODE_OFFSET) +
-      String.fromCharCode(((timeStamp >> 14) & 0b01111111) + WIRE_ENCODE_OFFSET) +
-      String.fromCharCode(((timeStamp >> 21) & 0b01111111) + WIRE_ENCODE_OFFSET) +
-      String.fromCharCode(((timeStamp >> 28) & 0b01111111) + WIRE_ENCODE_OFFSET) +
-      String.fromCharCode((ms & 0b01111111) + WIRE_ENCODE_OFFSET) +
-      String.fromCharCode(((ms >> 7) & 0b01111111) + WIRE_ENCODE_OFFSET)
+      String.fromCharCode(timeStamp & 0b01111111) +
+      String.fromCharCode((timeStamp >> 7) & 0b01111111) +
+      String.fromCharCode((timeStamp >> 14) & 0b01111111) +
+      String.fromCharCode((timeStamp >> 21) & 0b01111111) +
+      String.fromCharCode((timeStamp >> 28) & 0b01111111) +
+      String.fromCharCode(ms & 0b01111111) +
+      String.fromCharCode((ms >> 7) & 0b01111111)
     );
   },
 
@@ -335,13 +336,13 @@ export const pack = {
 
     return (
       TYPE_CHARS.date +
-      String.fromCharCode((timeStamp & 0b01111111) + WIRE_ENCODE_OFFSET) +
-      String.fromCharCode(((timeStamp >> 7) & 0b01111111) + WIRE_ENCODE_OFFSET) +
-      String.fromCharCode(((timeStamp >> 14) & 0b01111111) + WIRE_ENCODE_OFFSET) +
-      String.fromCharCode(((timeStamp >> 21) & 0b01111111) + WIRE_ENCODE_OFFSET) +
-      String.fromCharCode(((timeStamp >> 28) & 0b01111111) + WIRE_ENCODE_OFFSET) +
-      String.fromCharCode((ms & 0b01111111) + WIRE_ENCODE_OFFSET) +
-      String.fromCharCode(((ms >> 7) & 0b01111111) + WIRE_ENCODE_OFFSET)
+      String.fromCharCode(timeStamp & 0b01111111) +
+      String.fromCharCode((timeStamp >> 7) & 0b01111111) +
+      String.fromCharCode((timeStamp >> 14) & 0b01111111) +
+      String.fromCharCode((timeStamp >> 21) & 0b01111111) +
+      String.fromCharCode((timeStamp >> 28) & 0b01111111) +
+      String.fromCharCode(ms & 0b01111111) +
+      String.fromCharCode((ms >> 7) & 0b01111111)
     );
   },
 
@@ -383,7 +384,7 @@ export const pack = {
       let byte = len & 0b00111111;
       len >>= 6;
       if (len > 0) byte |= 0b01000000;
-      prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      prefix += String.fromCharCode(byte);
     } while (len > 0);
 
     return prefix + input;
@@ -397,7 +398,7 @@ export const pack = {
       let byte = len & 0b00111111;
       len >>= 6;
       if (len > 0) byte |= 0b01000000;
-      result += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      result += String.fromCharCode(byte);
     } while (len > 0);
 
     for (const item of input) {
@@ -421,7 +422,7 @@ export const pack = {
       let byte = len & 0b00111111;
       len >>= 6;
       if (len > 0) byte |= 0b01000000;
-      prefix += String.fromCharCode(byte + WIRE_ENCODE_OFFSET);
+      prefix += String.fromCharCode(byte);
     } while (len > 0);
 
     return prefix + str;
@@ -434,7 +435,7 @@ export const pack = {
  */
 export const unpack = {
   str(input: string, cursor: number): [string, number] {
-    let byte = input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
+    let byte = input.charCodeAt(cursor);
 
     // @DECODE DICTIONARY
     if (byte >= DICTIONARY_OFFSET) {
@@ -447,7 +448,7 @@ export const unpack = {
     let shift = 1;
 
     while (byte & 0b01000000) {
-      byte = input.charCodeAt(++cursor) - WIRE_ENCODE_OFFSET;
+      byte = input.charCodeAt(++cursor);
       len |= (byte & 0b00111111) << (shift++ * 6);
     }
 
@@ -456,25 +457,25 @@ export const unpack = {
     return [input.slice(cursor, cursor + len), cursor + len];
   },
 
-  hex(input: string, cursor: number): [string, number] {
-    const first = input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
+  rleStr(input: string, cursor: number): [string, number] {
+    const first = input.charCodeAt(cursor);
     if ((first & 0b10000000) === 0) {
-      // fast-path: not a packed hex string, fallback to regular string
+      // fast-path: not an RLE compressed string, fallback to regular string
       // unpacking
       return unpack.str(input, cursor);
     }
 
     //
-    // STEP: read trimmed string
+    // STEP: read RLE compressed string
     //
 
     // @DECODE STRING LENGTH
-    let byte = input.charCodeAt(cursor++) - WIRE_ENCODE_OFFSET;
+    let byte = input.charCodeAt(cursor++);
     let len = byte & 0b00111111;
     let shift = 1;
 
     while (byte & 0b01000000) {
-      byte = input.charCodeAt(cursor++) - WIRE_ENCODE_OFFSET;
+      byte = input.charCodeAt(cursor++);
       len |= (byte & 0b00111111) << (shift++ * 6);
     }
 
@@ -482,7 +483,7 @@ export const unpack = {
     // STEP: read RLE metadata
     //
 
-    const rleCount = input.charCodeAt(cursor++) - WIRE_ENCODE_OFFSET;
+    const rleCount = input.charCodeAt(cursor++);
     const RLEs = new Array<[start: number, len: number]>(rleCount);
 
     for (let i = 0; i < rleCount; i++) {
@@ -494,7 +495,7 @@ export const unpack = {
       let byte: number;
 
       do {
-        byte = input.charCodeAt(cursor++) - WIRE_ENCODE_OFFSET;
+        byte = input.charCodeAt(cursor++);
         offset |= (byte & 0b00111111) << (shift++ * 6);
       } while (byte & 0b01000000);
 
@@ -510,8 +511,8 @@ export const unpack = {
 
     for (const RLE of RLEs) {
       // Add next trimmed chunk
-      res += input.slice(cursor + tCursor, RLE[0]) + UNPACK_HEX_DICT[RLE[1]];
-      tCursor = RLE[0] - RLE[1];
+      res += input.slice(cursor + tCursor, cursor + RLE[0]) + UNPACK_HEX_DICT[RLE[1]];
+      tCursor = RLE[0];
     }
 
     // Add final remainder of trimmed string
@@ -525,7 +526,7 @@ export const unpack = {
   },
 
   nullableStr(input: string, cursor: number): [string | null | undefined, number] {
-    let byte = input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
+    let byte = input.charCodeAt(cursor);
 
     // @DECODE NULLABLE
     if (byte === TYPE_CODES.null) {
@@ -547,7 +548,7 @@ export const unpack = {
     let shift = 1;
 
     while (byte & 0b01000000) {
-      byte = input.charCodeAt(++cursor) - WIRE_ENCODE_OFFSET;
+      byte = input.charCodeAt(++cursor);
       len |= (byte & 0b00111111) << (shift++ * 6);
     }
 
@@ -557,7 +558,7 @@ export const unpack = {
   },
 
   strOrNum(input: string, cursor: number): [string | number, number] {
-    let byte = input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
+    let byte = input.charCodeAt(cursor);
 
     // @DECODE NUMBER
     if (byte === TYPE_CODES.number) {
@@ -580,7 +581,7 @@ export const unpack = {
     let shift = 1;
 
     while (byte & 0b01000000) {
-      byte = input.charCodeAt(++cursor) - WIRE_ENCODE_OFFSET;
+      byte = input.charCodeAt(++cursor);
       len |= (byte & 0b00111111) << (shift++ * 6);
     }
 
@@ -590,7 +591,7 @@ export const unpack = {
   },
 
   nullableStrOrNum(input: string, cursor: number): [string | number | null | undefined, number] {
-    let byte = input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
+    let byte = input.charCodeAt(cursor);
 
     // @DECODE NULLABLE
     if (byte === TYPE_CODES.null) {
@@ -622,7 +623,7 @@ export const unpack = {
     let shift = 1;
 
     while (byte & 0b01000000) {
-      byte = input.charCodeAt(++cursor) - WIRE_ENCODE_OFFSET;
+      byte = input.charCodeAt(++cursor);
       len |= (byte & 0b00111111) << (shift++ * 6);
     }
 
@@ -642,7 +643,7 @@ export const unpack = {
   },
 
   nullableNum(input: string, cursor: number): [number | null | undefined, number] {
-    const byte = input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
+    const byte = input.charCodeAt(cursor);
 
     // @DECODE NULLABLE
     if (byte === TYPE_CODES.null) {
@@ -664,12 +665,12 @@ export const unpack = {
 
   int(input: string, cursor: number): [number, number] {
     // @DECODE INT
-    let byte = input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
+    let byte = input.charCodeAt(cursor);
     let res = byte & 0b00111111;
     let shift = 1;
 
     while (byte & 0b01000000) {
-      byte = input.charCodeAt(++cursor) - WIRE_ENCODE_OFFSET;
+      byte = input.charCodeAt(++cursor);
       res |= (byte & 0b00111111) << (shift++ * 6);
     }
 
@@ -677,7 +678,7 @@ export const unpack = {
   },
 
   nullableInt(input: string, cursor: number): [number | null | undefined, number] {
-    let byte = input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
+    let byte = input.charCodeAt(cursor);
 
     // @DECODE NULLABLE
     if (byte === TYPE_CODES.null) {
@@ -693,7 +694,7 @@ export const unpack = {
     let shift = 1;
 
     while (byte & 0b01000000) {
-      byte = input.charCodeAt(++cursor) - WIRE_ENCODE_OFFSET;
+      byte = input.charCodeAt(++cursor);
       res |= (byte & 0b00111111) << (shift++ * 6);
     }
 
@@ -703,21 +704,21 @@ export const unpack = {
   date(input: string, cursor: number): [Date, number] {
     // @DECODE DATE
     let timeStamp = 0;
-    timeStamp |= input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
-    timeStamp |= (input.charCodeAt(cursor + 1) - WIRE_ENCODE_OFFSET) << 7;
-    timeStamp |= (input.charCodeAt(cursor + 2) - WIRE_ENCODE_OFFSET) << 14;
-    timeStamp |= (input.charCodeAt(cursor + 3) - WIRE_ENCODE_OFFSET) << 21;
-    timeStamp |= (input.charCodeAt(cursor + 4) - WIRE_ENCODE_OFFSET) << 28;
+    timeStamp |= input.charCodeAt(cursor);
+    timeStamp |= input.charCodeAt(cursor + 1) << 7;
+    timeStamp |= input.charCodeAt(cursor + 2) << 14;
+    timeStamp |= input.charCodeAt(cursor + 3) << 21;
+    timeStamp |= input.charCodeAt(cursor + 4) << 28;
 
     let ms = 0;
-    ms |= input.charCodeAt(cursor + 5) - WIRE_ENCODE_OFFSET;
-    ms |= (input.charCodeAt(cursor + 6) - WIRE_ENCODE_OFFSET) << 7;
+    ms |= input.charCodeAt(cursor + 5);
+    ms |= input.charCodeAt(cursor + 6) << 7;
 
     return [new Date(timeStamp * 1000 + ms), cursor + 7];
   },
 
   nullableDate(input: string, cursor: number): [Date | null | undefined, number] {
-    const byte = input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
+    const byte = input.charCodeAt(cursor);
 
     // @DECODE NULLABLE
     if (byte === TYPE_CODES.null) {
@@ -730,26 +731,26 @@ export const unpack = {
 
     // @DECODE DATE
     let timeStamp = 0;
-    timeStamp |= input.charCodeAt(cursor + 1) - WIRE_ENCODE_OFFSET;
-    timeStamp |= (input.charCodeAt(cursor + 2) - WIRE_ENCODE_OFFSET) << 7;
-    timeStamp |= (input.charCodeAt(cursor + 3) - WIRE_ENCODE_OFFSET) << 14;
-    timeStamp |= (input.charCodeAt(cursor + 4) - WIRE_ENCODE_OFFSET) << 21;
-    timeStamp |= (input.charCodeAt(cursor + 5) - WIRE_ENCODE_OFFSET) << 28;
+    timeStamp |= input.charCodeAt(cursor + 1);
+    timeStamp |= input.charCodeAt(cursor + 2) << 7;
+    timeStamp |= input.charCodeAt(cursor + 3) << 14;
+    timeStamp |= input.charCodeAt(cursor + 4) << 21;
+    timeStamp |= input.charCodeAt(cursor + 5) << 28;
 
     let ms = 0;
-    ms |= input.charCodeAt(cursor + 6) - WIRE_ENCODE_OFFSET;
-    ms |= (input.charCodeAt(cursor + 7) - WIRE_ENCODE_OFFSET) << 7;
+    ms |= input.charCodeAt(cursor + 6);
+    ms |= input.charCodeAt(cursor + 7) << 7;
 
     return [new Date(timeStamp * 1000 + ms), cursor + 8];
   },
 
   bool(input: string, cursor: number): [boolean, number] {
     // @DECODE BOOL
-    return [input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET === TYPE_CODES.boolean_true, cursor + 1];
+    return [input.charCodeAt(cursor) === TYPE_CODES.boolean_true, cursor + 1];
   },
 
   nullableBool(input: string, cursor: number): [boolean | null | undefined, number] {
-    const byte = input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
+    const byte = input.charCodeAt(cursor);
 
     // @DECODE NULLABLE
     if (byte === TYPE_CODES.null) {
@@ -765,7 +766,7 @@ export const unpack = {
   },
 
   primitive(input: string, cursor: number): [string | number | boolean | null | undefined, number] {
-    let byte = input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
+    let byte = input.charCodeAt(cursor);
 
     // @DECODE NULLABLE
     if (byte === TYPE_CODES.null) {
@@ -806,7 +807,7 @@ export const unpack = {
     let shift = 1;
 
     while (byte & 0b01000000) {
-      byte = input.charCodeAt(++cursor) - WIRE_ENCODE_OFFSET;
+      byte = input.charCodeAt(++cursor);
       len |= (byte & 0b00111111) << (shift++ * 6);
     }
 
@@ -822,7 +823,7 @@ export const unpack = {
     let byte;
 
     do {
-      byte = input.charCodeAt(cursor++) - WIRE_ENCODE_OFFSET;
+      byte = input.charCodeAt(cursor++);
       len |= (byte & 0b00111111) << (shift++ * 6);
     } while (byte & 0b01000000);
 
@@ -844,7 +845,7 @@ export const unpack = {
   },
 
   json(input: string, cursor: number): [unknown, number] {
-    let byte = input.charCodeAt(cursor) - WIRE_ENCODE_OFFSET;
+    let byte = input.charCodeAt(cursor);
 
     // @DECODE NULLABLE
     if (byte === TYPE_CODES.null) {
@@ -860,7 +861,7 @@ export const unpack = {
     let shift = 1;
 
     while (byte & 0b01000000) {
-      byte = input.charCodeAt(++cursor) - WIRE_ENCODE_OFFSET;
+      byte = input.charCodeAt(++cursor);
       len |= (byte & 0b00111111) << (shift++ * 6);
     }
 
@@ -869,12 +870,6 @@ export const unpack = {
     return [JSON.parse(input.slice(cursor, cursor + len)), cursor + len];
   },
 };
-
-//
-// Can be used to increment special character codes used by Wire, in order to
-// produce a more human-readable format which can be useful during debugging
-//
-export const WIRE_ENCODE_OFFSET = 0;
 
 //
 // Null character which is used to delimit numbers in the Wire format
@@ -894,7 +889,7 @@ const TYPE_CODES = Object.fromEntries(TYPES.map((type, index) => [type, TYPES_OF
 >;
 
 const TYPE_CHARS = Object.fromEntries(
-  TYPES.map((type, index) => [type, String.fromCharCode(TYPES_OFFSET + WIRE_ENCODE_OFFSET + index)]),
+  TYPES.map((type, index) => [type, String.fromCharCode(TYPES_OFFSET + index)]),
 ) as Record<(typeof TYPES)[number], string>;
 
 //
@@ -933,10 +928,10 @@ export const WIRE_DICTIONARY = [
   "cannot parse block height param (Direct.dev)",
   "the block height param is out of range (Direct.dev)",
 ];
-const DICTIONARY_OFFSET = 0b110000000 + WIRE_ENCODE_OFFSET;
+const DICTIONARY_OFFSET = 0b110000000;
 
 const DICTIONARY_TO_CHAR = new Map(
-  WIRE_DICTIONARY.map((word, index) => [word, String.fromCharCode(DICTIONARY_OFFSET + WIRE_ENCODE_OFFSET + index)]),
+  WIRE_DICTIONARY.map((word, index) => [word, String.fromCharCode(DICTIONARY_OFFSET + index)]),
 );
 const DICTIONARY_FROM_CODE = new Map(WIRE_DICTIONARY.map((word, index) => [DICTIONARY_OFFSET + index, word]));
 

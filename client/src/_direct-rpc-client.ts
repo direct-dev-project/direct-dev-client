@@ -270,6 +270,14 @@ export class DirectRPCClient {
   #currBatch: DirectRPCBatch | undefined;
 
   /**
+   * used to create a promise when current batch is being dispatched, which
+   * will resolve once we can guarantee that all predictively prefetched hashes
+   * has resolved (in order to avoid re-fetching the same requests again in the
+   * background).
+   */
+  #waitForCurrBatchHead: Deferred<void> | undefined;
+
+  /**
    * reference to the timeout which will trigger dispatching of the current
    * batch, allowing opening of a new one as soon as it becomes possible
    */
@@ -408,15 +416,19 @@ export class DirectRPCClient {
       if (this.#batchWindowMs < 0) {
         // if batching has been disabled, then dispatch the requests immediately
         this.#dispatchBatch();
-      } else if (this.#batchTimeout === undefined && this.#currBatch !== undefined && this.#currBatch.size > 0) {
-        // ... otherwise, if a throttled batch is not currently pending, then
-        // dispatch the current request immediately and set a timeout for
-        // subsequent requests
-        this.#dispatchBatch();
-        this.#batchTimeout = setTimeout(() => {
+      } else {
+        await this.#waitForCurrBatchHead;
+
+        if (this.#batchTimeout === undefined && this.#currBatch !== undefined && this.#currBatch.size > 0) {
+          // ... otherwise, if a throttled batch is not currently pending, then
+          // dispatch the current request immediately and set a timeout for
+          // subsequent requests
           this.#dispatchBatch();
-          this.#batchTimeout = undefined;
-        }, this.#batchWindowMs);
+          this.#batchTimeout = setTimeout(() => {
+            this.#dispatchBatch();
+            this.#batchTimeout = undefined;
+          }, this.#batchWindowMs);
+        }
       }
     }
   }
@@ -478,6 +490,10 @@ export class DirectRPCClient {
             this.#requestCache.delete(reqHash);
           }
         }
+
+        // wait for current head to be fully fetched, so we can correctly check
+        // inflight uniqueness against predictive prefetches
+        await this.#waitForCurrBatchHead;
 
         // if the request is already inflight, then re-use existing promise
         // and simply re-wrap the response with the expected ID
@@ -549,129 +565,147 @@ export class DirectRPCClient {
     const currBatch = this.#currBatch;
     this.#currBatch = undefined;
 
-    // re-map ids on requests, so that they're equal to the index of the
-    // request in the batch list (this is useful when receiving responses as
-    // it allows us to quickly identify the associated request hash and
-    // resolve the correct inflight promise)
-    const requests = await currBatch.requests;
-    const requestHashes = await Promise.all(requests.map((it) => wire.hashRPCRequest(it)));
-    const predictions: string[] = [];
-    const remainingRequestHashes = new Set(requestHashes);
+    // create a promise which will resolve once the current request completes
+    // fully
+    const waitForHead = (this.#waitForCurrBatchHead = makeDeferred());
 
-    // perform request to upstream, and handle responses by resolving batched
-    // entries
-    const [isDirectRequest, iterator] =
-      !this.#directDevBackoff || this.#directDevBackoff.endsAt <= Date.now()
-        ? await this.#fetchFromDirect(currBatch)
-        : [false, this.#fetchFromProviders(requests)];
+    try {
+      // re-map ids on requests, so that they're equal to the index of the
+      // request in the batch list (this is useful when receiving responses as
+      // it allows us to quickly identify the associated request hash and
+      // resolve the correct inflight promise)
+      const requests = await currBatch.requests;
+      const requestHashes = await Promise.all(requests.map((it) => wire.hashRPCRequest(it)));
+      const predictions: string[] = [];
+      const remainingRequestHashes = new Set(requestHashes);
 
-    let isDirectHeadPending = isDirectRequest;
+      // perform request to upstream, and handle responses by resolving batched
+      // entries
+      const [isDirectRequest, iterator] =
+        !this.#directDevBackoff || this.#directDevBackoff.endsAt <= Date.now()
+          ? await this.#fetchFromDirect(currBatch)
+          : [false, this.#fetchFromProviders(requests)];
 
-    for await (const { value: response } of iterator) {
-      // if we're waiting for the head of a response, then parse it as such
-      if (isDirectHeadPending) {
-        if (!("predictions" in response)) {
-          throw new Error("DirectRPCClient: invalid response structure received, expected head");
-        }
+      let isDirectHeadPending = isDirectRequest;
 
-        isDirectHeadPending = false;
+      if (!isDirectHeadPending) {
+        // instantly stop holding back subsequent batches, if a head is not
+        // pending
+        waitForHead.__resolve();
+      }
 
-        // for all incoming predictions, instantly register them as being
-        // inflight to prevent duplication on future events
-        for (const predictedReqHash of response.predictions) {
-          if (!this.#inflightCache.has(predictedReqHash)) {
-            const promise = makeDeferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>();
-
-            promise.then(() => {
-              this.#inflightCache.delete(predictedReqHash);
-            });
-
-            // create inflight cache for the predicted request, to avoid
-            // duplication in subsequent fetches
-            this.#inflightCache.set(predictedReqHash, promise);
+      for await (const { value: response } of iterator) {
+        // if we're waiting for the head of a response, then parse it as such
+        if (isDirectHeadPending) {
+          if (!("predictions" in response)) {
+            throw new Error("DirectRPCClient: invalid response structure received, expected head");
           }
 
-          // update internal state to reflect the predicted request
-          requestHashes.push(predictedReqHash);
-          predictions.push(predictedReqHash);
-          remainingRequestHashes.add(predictedReqHash);
+          isDirectHeadPending = false;
+          waitForHead.__resolve();
+
+          // for all incoming predictions, instantly register them as being
+          // inflight to prevent duplication on future events
+          for (const predictedReqHash of response.predictions) {
+            if (!this.#inflightCache.has(predictedReqHash)) {
+              const promise = makeDeferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>();
+
+              promise.then(() => {
+                this.#inflightCache.delete(predictedReqHash);
+              });
+
+              // create inflight cache for the predicted request, to avoid
+              // duplication in subsequent fetches
+              this.#inflightCache.set(predictedReqHash, promise);
+            }
+
+            // update internal state to reflect the predicted request
+            requestHashes.push(predictedReqHash);
+            predictions.push(predictedReqHash);
+            remainingRequestHashes.add(predictedReqHash);
+          }
+
+          // update currently known block height
+          this.#currentBlockHeight =
+            response.blockHeight && response.blockHeightExpiresAt
+              ? {
+                  value: response.blockHeight,
+                  expiresAt: response.blockHeightExpiresAt,
+                }
+              : undefined;
+
+          continue;
         }
 
-        // update currently known block height
-        this.#currentBlockHeight =
-          response.blockHeight && response.blockHeightExpiresAt
-            ? {
-                value: response.blockHeight,
-                expiresAt: response.blockHeightExpiresAt,
-              }
-            : undefined;
+        // ... otherwise parse the response, resolve external promises and apply
+        // to cache if relevant
+        if (!isRpcSuccessResponse(response) && !isRpcErrorResponse(response)) {
+          throw new Error("#dispatchBatch: received invalid response structure");
+        }
 
-        continue;
-      }
+        const reqHash = requestHashes[+response.id - 1];
 
-      // ... otherwise parse the response, resolve external promises and apply
-      // to cache if relevant
-      if (!isRpcSuccessResponse(response) && !isRpcErrorResponse(response)) {
-        throw new Error("#dispatchBatch: received invalid response structure");
-      }
+        if (!reqHash) {
+          this.#logger.error(
+            "#dispatchBatch",
+            `could not map response ID '${response.id}' to request hash, unable to resolve response`,
 
-      const reqHash = requestHashes[+response.id - 1];
+            requestHashes,
+            predictions,
+            response,
+          );
+          continue;
+        }
 
-      if (!reqHash) {
-        this.#logger.error(
-          "#dispatchBatch",
-          `could not map response ID '${response.id}' to request hash, unable to resolve response`,
+        remainingRequestHashes.delete(reqHash);
 
-          requestHashes,
-          predictions,
-          response,
+        // slight CPU overhead (~0,01-0,05ms pr. response object), ensuring
+        // that responses decoded through the Wire protocol will have
+        // identical structure to responses decoded through regular JSON
+        //
+        // namely, this ensures that "undefined" optional properties are
+        // omitted in the emitted object, whereas Wire will include them as
+        // undefined values
+        const output = JSON.parse(
+          JSON.stringify({ ...response, expiresWhenBlockHeightChanges: undefined, expiresAt: undefined }),
         );
-        continue;
+
+        this.#inflightCache.get(reqHash)?.__resolve(output);
+
+        if (reqHash && "result" in response && this.#currentBlockHeight) {
+          this.#requestCache.set(reqHash, {
+            value: output,
+            expiration: {
+              whenBlockHeightChanges: response.expiresWhenBlockHeightChanges ?? false,
+              expiresAt: response.expiresAt ?? undefined,
+            },
+            inception: {
+              blockHeight: this.#currentBlockHeight.value,
+            },
+
+            // if response ID exceeds the bounds of incoming requests, it was
+            // predictively prefetched
+            prefetched: +response.id > requests.length,
+          });
+        }
       }
 
-      remainingRequestHashes.delete(reqHash);
-
-      // slight CPU overhead (~0,01-0,05ms pr. response object), ensuring
-      // that responses decoded through the Wire protocol will have
-      // identical structure to responses decoded through regular JSON
-      //
-      // namely, this ensures that "undefined" optional properties are
-      // omitted in the emitted object, whereas Wire will include them as
-      // undefined values
-      const output = JSON.parse(
-        JSON.stringify({ ...response, expiresWhenBlockHeightChanges: undefined, expiresAt: undefined }),
-      );
-
-      this.#inflightCache.get(reqHash)?.__resolve(output);
-
-      if (reqHash && "result" in response && this.#currentBlockHeight) {
-        this.#requestCache.set(reqHash, {
-          value: output,
-          expiration: {
-            whenBlockHeightChanges: response.expiresWhenBlockHeightChanges ?? false,
-            expiresAt: response.expiresAt ?? undefined,
+      // after having received all responses, iterate through any missing
+      // promises and ensure that they are provided with a response
+      for (const reqHash of remainingRequestHashes) {
+        this.#inflightCache.get(reqHash)?.__resolve({
+          id: -1,
+          error: {
+            code: 85000,
+            message: "no response received for request (Direct.dev)",
           },
-          inception: {
-            blockHeight: this.#currentBlockHeight.value,
-          },
-
-          // if response ID exceeds the bounds of incoming requests, it was
-          // predictively prefetched
-          prefetched: +response.id > requests.length,
         });
       }
-    }
-
-    // after having received all responses, iterate through any missing
-    // promises and ensure that they are provided with a response
-    for (const reqHash of remainingRequestHashes) {
-      this.#inflightCache.get(reqHash)?.__resolve({
-        id: -1,
-        error: {
-          code: 85000,
-          message: "no response received for request (Direct.dev)",
-        },
-      });
+    } finally {
+      // ensure that we always resolve head proimse to avoid hanging forever
+      if (!waitForHead.__isFulfilled()) {
+        waitForHead.__resolve();
+      }
     }
   };
 

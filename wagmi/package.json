@@ -1,7 +1,7 @@
 {
   "name": "@direct.dev/wagmi",
   "description": "Wagmi transport for Direct.dev, optimizing performance and enhancing reliability.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/direct-dev-project/direct-dev-client.git"

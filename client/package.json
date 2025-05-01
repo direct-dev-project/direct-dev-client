@@ -1,6 +1,6 @@
 {
   "name": "@direct.dev/client",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/direct-dev-project/direct-dev-client.git"

@@ -1,5 +1,12 @@
 # @direct.dev/wire
 
+## 0.3.1
+
+### Patch Changes
+
+- 9c780f4: implement support for RLE compressing data strings
+  - @direct.dev/shared@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes

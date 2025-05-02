@@ -167,13 +167,13 @@ export abstract class DirectRPCBatch {
       // something went wrong in the Direct.dev layer, restore state and
       // perform fail-over
       if (!res.ok || !resBody) {
-        this.logger.error(
-          "FetchBatch",
-          "internal server error occurred (%s %s):\n\n%s",
-          res.status,
-          res.statusText,
-          await res.text(),
-        );
+        this.logger.error("FetchBatch", "internal server error occurred", {
+          res: {
+            status: res.status,
+            statusText: res.statusText,
+            body: await res.text(),
+          },
+        });
 
         return undefined;
       }
@@ -206,7 +206,7 @@ export abstract class DirectRPCBatch {
         })();
       }
     } catch (err) {
-      this.logger.error("Batch.dispatch", "fetch failed", err);
+      this.logger.error("Batch.dispatch", "fetch failed", { err });
       return undefined;
     }
   }

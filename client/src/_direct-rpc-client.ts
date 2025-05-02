@@ -649,10 +649,11 @@ export class DirectRPCClient {
           this.#logger.error(
             "#dispatchBatch",
             `could not map response ID '${response.id}' to request hash, unable to resolve response`,
-
-            requestHashes,
-            predictions,
-            response,
+            {
+              requestHashes,
+              predictions,
+              response,
+            },
           );
           continue;
         }
@@ -765,12 +766,14 @@ export class DirectRPCClient {
         endsAt: now + 2 ** Math.min(8, prevFailureCount) * BASE_BACKOFF_DURATION_MS,
       };
 
-      this.#logger.debug("#fetchFromDirect", "backing off until", new Date(this.#directDevBackoff.endsAt));
+      this.#logger.debug("#fetchFromDirect", "entering back-off mode", {
+        endsAt: new Date(this.#directDevBackoff.endsAt),
+      });
     }
 
     // retry the same requests in failover-mode to guarantee
     const requests = await batch.requests;
-    this.#logger.debug("#fetchFromDirect", "retrying failed requests from providers", requests);
+    this.#logger.debug("#fetchFromDirect", "retrying failed requests from providers", { requests });
 
     return [false, this.#fetchFromProviders(requests)];
   }

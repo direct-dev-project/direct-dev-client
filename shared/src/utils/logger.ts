@@ -25,13 +25,12 @@ type LoggerConfig = {
   context?: Record<string, string>;
 
   /**
-   * if provided, this hook will be triggered on all relevant log statements
-   * prior to printing the statement to the console.
+   * if enabled, then logs will be emitted with a structured JSON output, which
+   * is optimized for filtering in the Cloudflare Logs interface.
    *
-   * this is useful in durable objects, where we wish to stream log statements
-   * to event sources for external consumption purposes.
+   * @default false
    */
-  hook?: (level: LogLevel, message: string) => void;
+  structuredOutput?: boolean;
 };
 
 /**
@@ -49,7 +48,7 @@ type LoggerConfig = {
  * log("sendMail", "couldn't connect to mailtrap.io", { err });
  * // --> sendMail: couldn't connect to mailtrap.io { err: { ... } }
  */
-type LogFn = (callerName: string, message: string, ...additionalData: unknown[]) => void;
+type LogFn = (callerName: string, message: string, additionalData?: Record<string, unknown>) => void;
 
 /**
  * logger instance which automatically adds desired prefixes and contexts to
@@ -105,25 +104,22 @@ function makeLogFn(config: LoggerConfig, level: LogLevel): LogFn {
     };
   }
 
-  const levelPrefix = `[${level.toUpperCase()}]`;
-  const prefix = config.prefix ? `${levelPrefix} ${config.prefix}` : levelPrefix;
-
-  if (config.context) {
-    const context = { context: config.context };
-
-    return (callerName, message, ...additionalData) => {
-      config.hook?.(level, `${callerName} ${message}`);
-
+  if (config.structuredOutput) {
+    return (callerName, message, additionalData) => {
       // eslint-disable-next-line no-console
-      console[config.level](`${prefix} ${callerName}: ${message}`, ...additionalData, context);
+      console[config.level]({
+        prefix: config.prefix,
+        caller: callerName,
+        message,
+        ...additionalData,
+        context: config.context,
+      });
     };
   } else {
-    // intentional code duplication, to micro-optimize performance by removing
-    // conditional to check for existence of config.context only when creating a
-    // logger - not on every log statement
-    return (callerName, message, ...additionalData) => {
-      config.hook?.(level, `${callerName} ${message}`);
+    const levelPrefix = `[${level.toUpperCase()}]`;
+    const prefix = config.prefix ? `${levelPrefix} ${config.prefix}` : levelPrefix;
 
+    return (callerName, message, ...additionalData) => {
       // eslint-disable-next-line no-console
       console[config.level](`${prefix} ${callerName}: ${message}`, ...additionalData);
     };

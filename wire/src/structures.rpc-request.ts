@@ -17,7 +17,7 @@ export type RPCRequestStructure = DirectRPCRequest & {
 /**
  * implementation of WirePackers for common eth request signatures
  */
-export const RPCRequest = new Wire<RPCRequestStructure, [] | [options: { compress: boolean }]>(
+export const RPCRequest = new Wire<RPCRequestStructure>(
   {
     direct_primer: {
       id: 1,
@@ -450,66 +450,8 @@ export const RPCRequest = new Wire<RPCRequestStructure, [] | [options: { compres
         ];
       },
     },
-
-    eth_call__compressed: {
-      id: 127,
-      encode: (input) =>
-        pack.strOrNum(input.id) +
-        pack.str(input.params[0].to) +
-        pack.nullableStr(input.params[0].from) +
-        pack.rleStr(input.params[0].data) +
-        pack.nullableStr(input.params[0].input) +
-        pack.nullableStr(input.params[0].value) +
-        pack.nullableStr(input.params[0].gas) +
-        pack.nullableStr(input.params[0].gasPrice) +
-        // @note -- this is where we handle block override during encoding
-        pack.str(input.__overrideBlockHeight ?? input.params[1]),
-      decode: (input, cursor) => {
-        const id = unpack.strOrNum(input, cursor);
-        const toParam = unpack.str(input, id[1]);
-        const fromParam = unpack.nullableStr(input, toParam[1]);
-        const dataParam = unpack.rleStr(input, fromParam[1]);
-        const inputParam = unpack.nullableStr(input, dataParam[1]);
-        const valueParam = unpack.nullableStr(input, inputParam[1]);
-        const gasParam = unpack.nullableStr(input, valueParam[1]);
-        const gasPriceParam = unpack.nullableStr(input, gasParam[1]);
-        const blockHeight = unpack.str(input, gasPriceParam[1]);
-
-        return [
-          {
-            method: "eth_call",
-            id: id[0],
-            params: [
-              {
-                to: toParam[0],
-                from: fromParam[0],
-                data: dataParam[0],
-                input: inputParam[0],
-                value: valueParam[0],
-                gas: gasParam[0],
-                gasPrice: gasPriceParam[0],
-              },
-              blockHeight[0],
-            ],
-          },
-          blockHeight[1],
-        ];
-      },
-    },
   },
-  (input, [options]) => {
-    if (
-      options?.compress &&
-      input.method === "eth_call" &&
-      input.params &&
-      input.params[0] != null &&
-      typeof input.params[0].data === "string"
-    ) {
-      return "eth_call__compressed";
-    }
-
-    return input.method;
-  },
+  (input) => input.method,
 );
 
 /**
@@ -520,16 +462,12 @@ export function hashRPCRequest(
   req: Omit<RPCRequestStructure, "id"> & { id?: string | number },
   encodedStr?: string,
 ): Promise<string> {
-  if (
-    encodedStr !== undefined &&
-    encodedStr.charCodeAt(0) !== 127 // avoid re-using encoded string input, if it's been compressed by client, otherwise we can have hash inconsistencies for the same request when encoded on the server
-  ) {
+  if (encodedStr !== undefined) {
     return RPCRequest.hash(
       { ...req, id: "" },
       encodedStr.charAt(0) + pack.str("") + encodedStr.slice(unpack.strOrNum(encodedStr, 1)[1]),
-      { compress: false },
     );
   }
 
-  return RPCRequest.hash({ ...req, id: "" }, undefined, { compress: false });
+  return RPCRequest.hash({ ...req, id: "" }, undefined);
 }

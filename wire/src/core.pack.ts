@@ -64,7 +64,7 @@ export const pack = {
 
     //
     // STEP: scan through the entire input, and identify the 50 longest
-    // sequences of repeated 0s (up to 64 repeated occurrences) to get maximum
+    // sequences of repeated 0s (up to 127 repeated occurrences) to get maximum
     // benefit of RLE
     //
 
@@ -83,12 +83,12 @@ export const pack = {
       // identify sequences of repeated zeros
       do {
         cursor++;
-      } while (input.charCodeAt(cursor) === 48 && cursor - start < 64);
+      } while (input.charCodeAt(cursor) === 48 && cursor - start < 127);
 
       if (cursor - start >= 4) {
         RLEs.push([start, cursor - start]);
       }
-    } while (cursor < input.length && cursor < 2_000); // never scan more than 2 KB of data to avoid CPU overload
+    } while (cursor < input.length && cursor < 5_000); // never scan more than 5 KB of data to avoid CPU overload
 
     if (RLEs.length === 0) {
       // fast-path encoding if no repeated sequences were found
@@ -160,12 +160,6 @@ export const pack = {
       } while (len > 0);
 
       rleChars += RLE[1];
-    }
-
-    // if we cannot compress output enough (at least 15% or 100 bytes), then
-    // revert to plain string packing for faster decoding
-    if (res.length + trimmed.length > input.length * 0.85 && input.length - res.length - trimmed.length > 100) {
-      return pack.str("0x" + input);
     }
 
     return res + trimmed;
@@ -939,8 +933,10 @@ const DICTIONARY_FROM_CODE = new Map(WIRE_DICTIONARY.map((word, index) => [DICTI
 // Dictionary for blazingly fast unpacking of compressed hex values
 //
 
-const UNPACK_HEX_DICT: Record<number, string> = {};
+const UNPACK_HEX_DICT: Record<number, string> = {
+  4: "0000",
+};
 
-for (let i = 4; i <= 64; i++) {
-  UNPACK_HEX_DICT[i] = "0".repeat(i);
+for (let i = 5; i <= 127; i++) {
+  UNPACK_HEX_DICT[i] = UNPACK_HEX_DICT[i - 1] + "0";
 }

@@ -36,12 +36,12 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
       const str = encoder(item);
       let len = str.length;
       let prefix = "1";
-      while (len > 0) {
+      do {
         let byte = len & 0b00111111;
         len >>= 6;
         if (len > 0) byte |= 0b01000000;
         prefix += String.fromCharCode(byte);
-      }
+      } while (len > 0);
 
       result += prefix + str;
     }
@@ -117,12 +117,12 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
       // @ENCODE STRING LENGTH
       let len = config.sessionId.length;
       let prefix = "0";
-      while (len > 0) {
+      do {
         let byte = len & 0b00111111;
         len >>= 6;
         if (len > 0) byte |= 0b01000000;
         prefix += String.fromCharCode(byte);
-      }
+      } while (len > 0);
 
       this.#controllerRef.current?.enqueue(this.#textEncoder.encode(prefix + config.sessionId));
     }
@@ -135,12 +135,12 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
     // @ENCODE STRING LENGTH
     let len = input.length;
     let prefix = "1";
-    while (len > 0) {
+    do {
       let byte = len & 0b00111111;
       len >>= 6;
       if (len > 0) byte |= 0b01000000;
       prefix += String.fromCharCode(byte);
-    }
+    } while (len > 0);
 
     this.#controllerRef.current?.enqueue(this.#textEncoder.encode(prefix + input));
     this.#sizeInBytes += prefix.length + input.length;
@@ -156,12 +156,12 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
       let len = input.length;
       let prefix = "2";
 
-      while (len > 0) {
+      do {
         let byte = len & 0b00111111;
         len >>= 6;
         if (len > 0) byte |= 0b01000000;
         prefix += String.fromCharCode(byte);
-      }
+      } while (len > 0);
 
       this.#controllerRef.current?.enqueue(this.#textEncoder.encode(prefix + input));
       this.#controllerRef.current?.close();
@@ -328,7 +328,7 @@ export class WireDecodeStream {
       let result: ReadableStreamReadResult<Uint8Array> | undefined;
 
       while (!(result = await reader.read()).done) {
-        this.#buffer += this.#textDecoder.decode(result.value);
+        this.#buffer += this.#textDecoder.decode(result.value, { stream: true });
 
         // if we haven't extracted the version of the parser yet, then do so now
         if (wireVersion === undefined) {
@@ -415,7 +415,7 @@ export class WireDecodeStream {
     let result: ReadableStreamReadResult<Uint8Array> | undefined;
 
     while (!(result = await reader.read()).done) {
-      buffer += this.#textDecoder.decode(result.value);
+      buffer += this.#textDecoder.decode(result.value, { stream: true });
     }
 
     return buffer;

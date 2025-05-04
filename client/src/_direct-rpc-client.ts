@@ -261,7 +261,10 @@ export class DirectRPCClient {
    * map of currently in-flight requests, which allows re-use of existing
    * requests if the same ressource is fetched concurrently
    */
-  #inflightCache = new Map<RPCRequestHash, Deferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>>();
+  #inflightCache = new Map<
+    RPCRequestHash,
+    Deferred<DirectRPCSuccessResponse | DirectRPCErrorResponse> & { prefetched: boolean }
+  >();
 
   /**
    * reference to the currently open batch, so that requests can be pushed onto
@@ -500,7 +503,11 @@ export class DirectRPCClient {
         const inflightPromise = this.#inflightCache.get(reqHash);
 
         if (inflightPromise) {
-          this.#inflightHits.push({ ...req, timestamp: new Date(), blockHeight: this.#currentBlockHeight?.value });
+          (!inflightPromise.prefetched ? this.#inflightHits : this.#prefetchHits).push({
+            ...req,
+            timestamp: new Date(),
+            blockHeight: this.#currentBlockHeight?.value,
+          });
 
           return inflightPromise;
         }
@@ -509,7 +516,7 @@ export class DirectRPCClient {
         // promise for it, and push it to the next batch
         const promise = makeDeferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>();
 
-        this.#inflightCache.set(reqHash, promise);
+        this.#inflightCache.set(reqHash, Object.assign(promise, { prefetched: false }));
 
         this.#currBatch ??= createBatch(this.#batchConfig, this.#logger);
         this.#currBatch.push(req);
@@ -616,7 +623,7 @@ export class DirectRPCClient {
 
               // create inflight cache for the predicted request, to avoid
               // duplication in subsequent fetches
-              this.#inflightCache.set(predictedReqHash, promise);
+              this.#inflightCache.set(predictedReqHash, Object.assign(promise, { prefetched: true }));
             }
 
             // update internal state to reflect the predicted request

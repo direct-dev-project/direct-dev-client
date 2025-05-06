@@ -126,8 +126,7 @@ export class PushableAsyncGenerator<T, TReturn = any> implements AsyncGenerator<
 
   async return(value: TReturn) {
     if (this.#isClosed) {
-      // do nothing if generator has already closed
-      return Promise.resolve({ done: true, value } as const);
+      throw new Error("PushableAsyncGenerator.return(): Generator is already closed");
     }
 
     this.#isClosed = true;
@@ -137,7 +136,7 @@ export class PushableAsyncGenerator<T, TReturn = any> implements AsyncGenerator<
 
   async throw(reason: unknown) {
     if (this.#isClosed) {
-      return Promise.reject(reason);
+      throw new Error("PushableAsyncGenerator.throw(): Generator is already closed");
     }
 
     this.#isClosed = true;

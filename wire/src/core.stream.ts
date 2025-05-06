@@ -28,7 +28,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
    * streaming interface.
    */
   public static fromArray<T>(input: T[], encoder: (item: T) => string): string {
-    let result = VERSION_CHAR;
+    let result = "";
 
     // push individual items to the result stream
     for (const item of input) {

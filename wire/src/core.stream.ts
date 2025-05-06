@@ -213,10 +213,15 @@ export class WireDecodeStream {
     input: string,
     transformEntry: (input: string, version: number) => Promise<T> | T = (input) => input as T,
     transformDone: (input: string, version: number) => Promise<TDone> | TDone = (input) => input as TDone,
-  ): PushableAsyncGenerator<WireStreamEntry<T, TDone>> {
+  ): {
+    stream: PushableAsyncGenerator<WireStreamEntry<T, TDone>>;
+    version: number;
+    sessionId: Promise<string | undefined>;
+  } {
     const wireVersion = input.charCodeAt(0) - 48;
+    const sessionId = makeDeferred<string | undefined>();
 
-    return new PushableAsyncGenerator(async (push) => {
+    const stream = new PushableAsyncGenerator<WireStreamEntry<T, TDone>>(async (push) => {
       let buffer = input.slice(1);
 
       while (buffer.length > 0) {
@@ -244,10 +249,10 @@ export class WireDecodeStream {
           const value = buffer.slice(cursor, cursor + len);
 
           switch (buffer.charCodeAt(0)) {
-            // "0" (we received a session ID - cannot emit when reading from
-            // string)
+            // "0" (we received a session ID)
             case 48:
-              throw new Error("WireDecodeStream.fromString(): does not support streams including session IDs");
+              sessionId.__resolve(value);
+              break;
 
             // "1" (we received an entry)
             case 49:
@@ -266,6 +271,10 @@ export class WireDecodeStream {
                 value: await transformDone(value, wireVersion),
                 version: wireVersion,
               });
+
+              if (!sessionId.__isFulfilled()) {
+                sessionId.__resolve(undefined);
+              }
               return;
           }
 
@@ -276,7 +285,17 @@ export class WireDecodeStream {
           break;
         }
       }
+
+      if (!sessionId.__isFulfilled()) {
+        sessionId.__resolve(undefined);
+      }
     });
+
+    return {
+      stream,
+      version: wireVersion,
+      sessionId,
+    };
   }
 
   /**

@@ -12,7 +12,6 @@ import type {
 import {
   Logger,
   PushableAsyncGenerator,
-  chunkArray,
   deriveProviderFromNodeUrl,
   deriveProviderFromRequest,
   makeDeferred,
@@ -26,12 +25,6 @@ import { createBatch } from "./util.create-batch.js";
 import { generateSessionId } from "./util.generate-session-id.js";
 import { isSupportedRequest } from "./util.is-supported-request.js";
 import { normalizeContextFromUrl } from "./util.normalize-url.js";
-
-/**
- * configures the maximum number of requests to dispatch within a single
- * request batch.
- */
-const BATCH_MAX_SIZE = 10;
 
 /**
  * specifies the base back-off duration in case the Direct.dev infrastructure
@@ -820,22 +813,18 @@ export class DirectRPCClient {
     );
 
     //
-    // STEP: chunk batches, so we never emit too many requests in a single batch
+    // STEP: submit batches to requested providers
     //
-    const chunks = Object.entries(providerBatches).flatMap(([providerId, requests]) => {
-      return chunkArray(requests, BATCH_MAX_SIZE).map((chunk) => ({
-        requests: chunk,
-        providerId: (providerId || undefined) as SupportedProviderId | undefined,
-      }));
-    });
-
     const generator = new PushableAsyncGenerator<{
       done: false;
       value: DirectRPCSuccessResponse | DirectRPCErrorResponse;
     }>(async (emit) => {
       await Promise.allSettled(
-        chunks.map(async ({ requests, providerId }) => {
-          const res = await this.#fetchChunkFromProviders(requests, providerId);
+        Object.entries(providerBatches).map(async ([providerId, requests]) => {
+          const res = await this.#fetchChunkFromProviders(
+            requests,
+            (providerId || undefined) as SupportedProviderId | undefined,
+          );
 
           for (const item of res) {
             emit({ done: false, value: item });

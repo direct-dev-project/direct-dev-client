@@ -46,5 +46,5 @@ export async function sha256(input: string): Promise<string> {
     base128 += String.fromCharCode((buffer << (7 - bitsInBuffer)) & 0x7f);
   }
 
-  return base128; // array of integers 0–127
+  return base128;
 }

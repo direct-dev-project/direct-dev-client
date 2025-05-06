@@ -17,7 +17,7 @@ import {
   makeDeferred,
   weightedPick,
 } from "@direct.dev/shared";
-import { wire, WireDecodeStream, WireEncodeStream } from "@direct.dev/wire";
+import { sha256, wire, WireDecodeStream, WireEncodeStream } from "@direct.dev/wire";
 
 import type { BatchConfig, DirectRPCBatch } from "./batch.core.js";
 import { isRpcErrorResponse, isRpcRequest, isRpcSuccessResponse } from "./guards.js";
@@ -542,7 +542,7 @@ export class DirectRPCClient {
       jsonrpc: "2.0",
       id: 1,
       method: "direct_primer",
-      params: [normalizeContextFromUrl(typeof window !== "undefined" ? window.location.href : "/")],
+      params: [await sha256(normalizeContextFromUrl(typeof window !== "undefined" ? window.location.href : "/"))],
     };
 
     // push the primer request to the list of pending requests, and then

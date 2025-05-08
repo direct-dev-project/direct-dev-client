@@ -87,11 +87,11 @@ export abstract class DirectRPCBatch {
           result = await this.#requests.next();
 
           if (result.done) {
-            await wireStream.pushTail(wire.requestTail.encode(result.value), { compress: true });
+            await wireStream.pushTail(wire.requestTail.encode(result.value), { compress: isCompressionSupported });
             break;
           }
 
-          await wireStream.pushItem(wire.RPCRequest.encode(result.value), { compress: true });
+          await wireStream.pushItem(wire.RPCRequest.encode(result.value), { compress: isCompressionSupported });
         } while (!result.done);
 
         wireStream.close();
@@ -259,3 +259,12 @@ export abstract class DirectRPCBatch {
    */
   protected abstract fetch(): Promise<Response>;
 }
+
+// feature-detect whether or not compression is supported by the user's browser
+const isCompressionSupported = (() => {
+  try {
+    return typeof CompressionStream === "function" && new CompressionStream("gzip") instanceof CompressionStream;
+  } catch {
+    return false;
+  }
+})();

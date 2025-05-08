@@ -1,7 +1,7 @@
 export type LogLevel = Exclude<keyof Logger, "setContext" | "__extend">;
 
 type LoggerConfig = {
-  level: LogLevel;
+  level: LogLevel | "silent";
 
   /**
    * optional prefix to inject before all message logs
@@ -98,6 +98,12 @@ export class Logger {
 }
 
 function makeLogFn(config: LoggerConfig, level: LogLevel): LogFn {
+  if (config.level === "silent") {
+    return () => {
+      // noop, this level has been disabled
+    };
+  }
+
   if (weightLogLevel(level) < weightLogLevel(config.level)) {
     return () => {
       // noop, this level has been disabled
@@ -107,7 +113,7 @@ function makeLogFn(config: LoggerConfig, level: LogLevel): LogFn {
   if (config.structuredOutput) {
     return (callerName, message, additionalData) => {
       // eslint-disable-next-line no-console
-      console[config.level]({
+      console[level]({
         prefix: config.prefix,
         caller: callerName,
         message,
@@ -121,7 +127,7 @@ function makeLogFn(config: LoggerConfig, level: LogLevel): LogFn {
 
     return (callerName, message, ...additionalData) => {
       // eslint-disable-next-line no-console
-      console[config.level](`${prefix} ${callerName}: ${message}`, ...additionalData);
+      console[level](`${prefix} ${callerName}: ${message}`, ...additionalData);
     };
   }
 }

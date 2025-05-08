@@ -29,6 +29,14 @@ export class DirectRPCFetchBatch extends DirectRPCBatch {
     return fetch(this.config.endpointUrl, {
       method: "POST",
       body: reqBody,
+      headers: !this.config.preferJSON
+        ? {
+            "Content-Type": "application/octet-stream",
+            "Content-Encoding": "identity",
+          }
+        : {
+            "Content-Type": "application/x-ndjson",
+          },
     });
   }
 }

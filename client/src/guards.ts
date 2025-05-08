@@ -1,9 +1,10 @@
-import {
-  isRecord,
-  type DirectRPCErrorResponse,
-  type DirectRPCRequest,
-  type DirectRPCSuccessResponse,
+import type {
+  DirectRPCHead,
+  DirectRPCErrorResponse,
+  DirectRPCRequest,
+  DirectRPCSuccessResponse,
 } from "@direct.dev/shared";
+import { isRecord } from "@direct.dev/shared";
 
 /**
  * handcrafted type guard for RPC Requests, designed to do blazingly fast
@@ -89,6 +90,37 @@ export function isRpcErrorResponse(input: unknown): input is DirectRPCErrorRespo
   }
 
   if (errorMessageType !== "string") {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * handcrafted validator for error RPC Responses, designed to do blazingly fast
+ * validation of unknown input with zero dependencies in the client layer.
+ */
+export function isDirectHead(input: unknown): input is DirectRPCHead {
+  if (!isRecord(input)) {
+    return false;
+  }
+
+  if (!Array.isArray(input["predictions"])) {
+    return false;
+  }
+
+  if (input["predictions"].some((it) => typeof it !== "string")) {
+    return false;
+  }
+
+  if ("blockHeight" in input && typeof input["blockHeight"] !== "string" && input["blockHeight"] !== null) {
+    return false;
+  }
+  if (
+    "blockHeightExpiresAt" in input &&
+    input["blockHeightExpiresAt"] !== null &&
+    !(input["blockHeightExpiresAt"] instanceof Date)
+  ) {
     return false;
   }
 

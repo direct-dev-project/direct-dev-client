@@ -4,31 +4,31 @@ import { pack, unpack } from "./core.pack.js";
 import { Wire } from "./core.wire.js";
 import { RPCRequest } from "./structures.rpc-request.js";
 
-export type ClientReportEntry = DirectRPCRequest & {
+export type RequestTailEntry = DirectRPCRequest & {
   timestamp: Date;
   blockHeight: string | undefined;
   __encodedStr?: string;
 };
 
-export type ClientReport = {
-  cacheHits: ClientReportEntry[];
-  prefetchHits: ClientReportEntry[];
-  inflightHits: ClientReportEntry[];
+export type RequestTail = {
+  cacheHits: RequestTailEntry[];
+  prefetchHits: RequestTailEntry[];
+  inflightHits: RequestTailEntry[];
 };
 
 /**
  * Wire encoder optimized to pack metrics regarding cache hits and request
  * samples collected in the client layer.
  */
-export const clientReport = new Wire<ClientReport>({
+export const requestTail = new Wire<RequestTail>({
   encode: (input) =>
-    pack.arr(input.cacheHits, (it) => clientReportEntryWire.encode(it)) +
-    pack.arr(input.prefetchHits, (it) => clientReportEntryWire.encode(it)) +
-    pack.arr(input.inflightHits, (it) => clientReportEntryWire.encode(it)),
+    pack.arr(input.cacheHits, (it) => requestTailEntryWire.encode(it)) +
+    pack.arr(input.prefetchHits, (it) => requestTailEntryWire.encode(it)) +
+    pack.arr(input.inflightHits, (it) => requestTailEntryWire.encode(it)),
   decode: (input, cursor) => {
-    const cacheHits = unpack.arr(input, cursor, (cursor) => clientReportEntryWire.decode(input, cursor));
-    const prefetchHits = unpack.arr(input, cacheHits[1], (cursor) => clientReportEntryWire.decode(input, cursor));
-    const inflightHits = unpack.arr(input, prefetchHits[1], (cursor) => clientReportEntryWire.decode(input, cursor));
+    const cacheHits = unpack.arr(input, cursor, (cursor) => requestTailEntryWire.decode(input, cursor));
+    const prefetchHits = unpack.arr(input, cacheHits[1], (cursor) => requestTailEntryWire.decode(input, cursor));
+    const inflightHits = unpack.arr(input, prefetchHits[1], (cursor) => requestTailEntryWire.decode(input, cursor));
 
     return [
       {
@@ -41,7 +41,7 @@ export const clientReport = new Wire<ClientReport>({
   },
 });
 
-const clientReportEntryWire = new Wire<ClientReportEntry>({
+const requestTailEntryWire = new Wire<RequestTailEntry>({
   encode: (input) =>
     (input.__encodedStr ?? RPCRequest.encode(input)) + pack.date(input.timestamp) + pack.nullableStr(input.blockHeight),
   decode: (input, cursor) => {

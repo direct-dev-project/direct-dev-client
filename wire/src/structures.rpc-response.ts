@@ -1,47 +1,21 @@
-import type { DirectRPCErrorResponse, DirectRPCSuccessResponse, DirectRPCHead } from "@direct.dev/shared";
+import type { DirectRPCErrorResponse, DirectRPCSuccessResponse } from "@direct.dev/shared";
 
 import { pack, unpack } from "./core.pack.js";
 import { Wire } from "./core.wire.js";
 
-export type RPCResponseStructure = DirectRPCSuccessResponse | DirectRPCErrorResponse | DirectRPCHead;
+export type RPCResponseStructure = DirectRPCSuccessResponse | DirectRPCErrorResponse;
 
 /**
  * implementation of WirePackers for common eth response signatures
  */
-export const RPCResponse = new Wire<
-  RPCResponseStructure,
-  | [requestMethod: string | null | undefined]
-  | [requestMethod: string | null | undefined, options: { compress: boolean }]
->(
+export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string | null | undefined]>(
   {
     //
     // Direct.dev proprietary response structures
     //
 
-    direct_head: {
-      id: 1,
-      encode: (input) =>
-        pack.arr((input as DirectRPCHead).predictions, (it) => pack.sha256(it)) +
-        pack.nullableStr((input as DirectRPCHead).blockHeight) +
-        pack.nullableDate((input as DirectRPCHead).blockHeightExpiresAt),
-      decode: (input, cursor) => {
-        const predictions = unpack.arr(input, cursor, (cursor) => unpack.sha256(input, cursor));
-        const blockHeight = unpack.nullableStr(input, predictions[1]);
-        const blockHeightExpiresAt = unpack.nullableDate(input, blockHeight[1]);
-
-        return [
-          {
-            predictions: predictions[0],
-            blockHeight: blockHeight[0],
-            blockHeightExpiresAt: blockHeightExpiresAt[0],
-          },
-          blockHeightExpiresAt[1],
-        ];
-      },
-    },
-
     direct_primer: {
-      id: 2,
+      id: 1,
       encode: (input) => pack.strOrNum((input as DirectRPCSuccessResponse).id),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -61,33 +35,8 @@ export const RPCResponse = new Wire<
     // the specific responses
     //
 
-    rpc_success__compressed: {
-      id: 3,
-      encode: (input) =>
-        pack.strOrNum((input as DirectRPCSuccessResponse).id) +
-        pack.nullableBool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges) +
-        pack.nullableDate((input as DirectRPCSuccessResponse).expiresAt) +
-        pack.rleStr((input as DirectRPCSuccessResponse).result as string),
-      decode: (input, cursor) => {
-        const id = unpack.strOrNum(input, cursor);
-        const expiresWhenBlockHeightChanges = unpack.nullableBool(input, id[1]);
-        const expiresAt = unpack.nullableDate(input, expiresWhenBlockHeightChanges[1]);
-        const result = unpack.rleStr(input, expiresAt[1]);
-
-        return [
-          {
-            id: id[0],
-            result: result[0],
-            expiresWhenBlockHeightChanges: expiresWhenBlockHeightChanges[0],
-            expiresAt: expiresAt[0],
-          },
-          result[1],
-        ];
-      },
-    },
-
     rpc_success__primitive: {
-      id: 4,
+      id: 2,
       encode: (input) =>
         pack.strOrNum((input as DirectRPCSuccessResponse).id) +
         pack.nullableBool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges) +
@@ -112,7 +61,7 @@ export const RPCResponse = new Wire<
     },
 
     rpc_success__json: {
-      id: 5,
+      id: 3,
       encode: (input) =>
         pack.strOrNum((input as DirectRPCSuccessResponse).id) +
         pack.nullableBool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges) +
@@ -137,7 +86,7 @@ export const RPCResponse = new Wire<
     },
 
     rpc_error: {
-      id: 6,
+      id: 4,
       encode: (input) =>
         pack.strOrNum((input as DirectRPCErrorResponse).id) +
         pack.num((input as DirectRPCErrorResponse).error.code) +
@@ -163,7 +112,7 @@ export const RPCResponse = new Wire<
       },
     },
   },
-  (input, [requestMethod, options]) => {
+  (input, [requestMethod]) => {
     if ("result" in input) {
       switch (requestMethod) {
         case "direct_primer":
@@ -172,8 +121,6 @@ export const RPCResponse = new Wire<
         default:
           switch (typeof input.result) {
             case "string":
-              return options?.compress ? "rpc_success__compressed" : "rpc_success__primitive";
-
             case "bigint":
             case "boolean":
             case "number":

@@ -20,6 +20,14 @@ export class DirectRPCDuplexFetchBatch extends DirectRPCBatch {
     this.#res = fetch(this.config.endpointUrl, {
       method: "POST",
       body: this.bodyStream,
+      headers: !config.preferJSON
+        ? {
+            "Content-Type": "application/octet-stream",
+            "Content-Encoding": "identity",
+          }
+        : {
+            "Content-Type": "application/x-ndjson",
+          },
 
       // @ts-expect-error: TypeScript doesn't include support for duplex in
       // fetch API yet

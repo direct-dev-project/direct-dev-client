@@ -17,7 +17,7 @@ import {
   makeDeferred,
   weightedPick,
 } from "@direct.dev/shared";
-import { sha256, wire, WireDecodeStream, WireEncodeStream } from "@direct.dev/wire";
+import { sha256, wire } from "@direct.dev/wire";
 
 import type { BatchConfig, DirectRPCBatch } from "./batch.core.js";
 import { isRpcErrorResponse, isRpcRequest, isRpcSuccessResponse } from "./guards.js";
@@ -283,20 +283,20 @@ export class DirectRPCClient {
    * internally collects collection of requests that were served from in-memory
    * cache, so that they can be sampled for popularity subsequently
    */
-  #cacheHits: wire.ClientReportEntry[] = [];
+  #cacheHits: wire.RequestTailEntry[] = [];
 
   /**
    * internally collects collection of requests that were prefetched and
    * subsequently served from in-memory cache, so that they can be sampled for
    * popularity subsequently
    */
-  #prefetchHits: wire.ClientReportEntry[] = [];
+  #prefetchHits: wire.RequestTailEntry[] = [];
 
   /**
    * internally collects collection of requests that were served from inflight
    * uniqueness cache, so that they can be sampled for popularity subsequently
    */
-  #inflightHits: wire.ClientReportEntry[] = [];
+  #inflightHits: wire.RequestTailEntry[] = [];
 
   /**
    * specifies if this client instance has been destroyed, used to prevent
@@ -338,7 +338,7 @@ export class DirectRPCClient {
     this.#batchWindowMs = config.batchWindowMs ?? 25;
     this.#batchConfig = {
       sessionId: generateSessionId(),
-      endpointUrl: this.endpointUrl + (config.preferJSON ? "/ndjson" : ""),
+      endpointUrl: this.endpointUrl,
       preferJSON: config.preferJSON,
       isHttps: config.baseUrl ? config.baseUrl.startsWith("https://") : false,
     };
@@ -385,11 +385,7 @@ export class DirectRPCClient {
     //
     if (!Array.isArray(req) && !isSupportedRequest(req)) {
       for await (const response of this.#fetchFromProviders([req])) {
-        if (!isRpcSuccessResponse(response) && !isRpcErrorResponse(response)) {
-          throw new Error("fetch: received invalid response structure");
-        }
-
-        return response;
+        return response.value;
       }
 
       this.#logger.error("fetch", "no response received for request", req);
@@ -586,27 +582,21 @@ export class DirectRPCClient {
           ? await this.#fetchFromDirect(currBatch)
           : [false, this.#fetchFromProviders(requests)];
 
-      let isDirectHeadPending = isDirectRequest;
-
-      if (!isDirectHeadPending) {
-        // instantly stop holding back subsequent batches, if a head is not
-        // pending
+      if (!isDirectRequest) {
+        // instantly stop holding back subsequent batches, if the request was
+        // not handled through Direct.dev infrastructure (predictive prefetching
+        // will never kick in from third-party providers)
         waitForHead.__resolve();
       }
 
-      for await (const { value: response } of iterator) {
+      for await (const segment of iterator) {
         // if we're waiting for the head of a response, then parse it as such
-        if (isDirectHeadPending) {
-          if (!("predictions" in response)) {
-            throw new Error("DirectRPCClient: invalid response structure received, expected head");
-          }
-
-          isDirectHeadPending = false;
-          waitForHead.__resolve();
+        if (segment.type === "head") {
+          const head = segment.value;
 
           // for all incoming predictions, instantly register them as being
           // inflight to prevent duplication on future events
-          for (const predictedReqHash of response.predictions) {
+          for (const predictedReqHash of head.predictions) {
             if (!this.#inflightCache.has(predictedReqHash)) {
               const promise = makeDeferred<DirectRPCSuccessResponse | DirectRPCErrorResponse>();
 
@@ -627,22 +617,20 @@ export class DirectRPCClient {
 
           // update currently known block height
           this.#currentBlockHeight =
-            response.blockHeight && response.blockHeightExpiresAt
+            head.blockHeight && head.blockHeightExpiresAt
               ? {
-                  value: response.blockHeight,
-                  expiresAt: response.blockHeightExpiresAt,
+                  value: head.blockHeight,
+                  expiresAt: head.blockHeightExpiresAt,
                 }
               : undefined;
 
+          waitForHead.__resolve();
           continue;
         }
 
         // ... otherwise parse the response, resolve external promises and apply
         // to cache if relevant
-        if (!isRpcSuccessResponse(response) && !isRpcErrorResponse(response)) {
-          throw new Error("#dispatchBatch: received invalid response structure");
-        }
-
+        const response = segment.value;
         const reqHash = requestHashes[+response.id - 1];
 
         if (!reqHash) {
@@ -691,6 +679,12 @@ export class DirectRPCClient {
         }
       }
 
+      // ensure that head promise is resolved, in edge cases where Direct.dev
+      // failed to deliver head segment
+      if (!waitForHead.__isFulfilled()) {
+        waitForHead.__resolve();
+      }
+
       // after having received all responses, iterate through any missing
       // promises and ensure that they are provided with a response
       for (const reqHash of remainingRequestHashes) {
@@ -718,7 +712,10 @@ export class DirectRPCClient {
   ): Promise<
     [
       isDirectHeadPending: boolean,
-      AsyncGenerator<{ done: boolean; value: DirectRPCHead | DirectRPCSuccessResponse | DirectRPCErrorResponse }>,
+      AsyncGenerator<
+        | { type: "head"; value: DirectRPCHead }
+        | { type: "item"; value: DirectRPCSuccessResponse | DirectRPCErrorResponse }
+      >,
     ]
   > {
     const cacheHits = this.#cacheHits;
@@ -784,7 +781,7 @@ export class DirectRPCClient {
    */
   #fetchFromProviders(
     requests: DirectRPCRequest[],
-  ): AsyncGenerator<{ done: boolean; value: DirectRPCSuccessResponse | DirectRPCErrorResponse }> {
+  ): AsyncGenerator<{ type: "item"; value: DirectRPCSuccessResponse | DirectRPCErrorResponse }> {
     //
     // STEP: split requests into batches, which can be performed against
     // specific providers
@@ -816,7 +813,7 @@ export class DirectRPCClient {
     // STEP: submit batches to requested providers
     //
     const generator = new PushableAsyncGenerator<{
-      done: false;
+      type: "item";
       value: DirectRPCSuccessResponse | DirectRPCErrorResponse;
     }>(async (emit) => {
       await Promise.allSettled(
@@ -827,7 +824,7 @@ export class DirectRPCClient {
           );
 
           for (const item of res) {
-            emit({ done: false, value: item });
+            emit({ type: "item", value: item });
           }
         }),
       );
@@ -990,18 +987,24 @@ export class DirectRPCClient {
       return;
     }
 
-    // encode the metrics using a wire stream
-    const encodeStream = new WireEncodeStream();
-
-    encodeStream.close(
-      wire.clientReport.encode({
-        cacheHits,
-        prefetchHits,
-        inflightHits,
-      }),
+    navigator.sendBeacon(
+      this.endpointUrl,
+      new Blob(
+        [
+          JSON.stringify({
+            type: "tail",
+            value: {
+              cacheHits,
+              prefetchHits,
+              inflightHits,
+            },
+          }),
+        ],
+        {
+          type: "application/x-ndjson",
+        },
+      ),
     );
-
-    navigator.sendBeacon(this.endpointUrl, await new WireDecodeStream(encodeStream).toString());
 
     // reset in-memory samples and hope that the beacon goes through for proper
     // collection of metrics

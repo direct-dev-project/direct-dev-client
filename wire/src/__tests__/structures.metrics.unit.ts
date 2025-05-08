@@ -1,9 +1,9 @@
 import { it, expect } from "vitest";
 
-import { clientReport, type ClientReport } from "../structures.report.js";
+import { requestTail, type RequestTail } from "../structures.request-tail.js";
 
 it("should encode+decode client metrics correctly", () => {
-  const input: ClientReport = {
+  const input: RequestTail = {
     cacheHits: [
       {
         timestamp: new Date(),
@@ -32,8 +32,8 @@ it("should encode+decode client metrics correctly", () => {
       },
     ],
   };
-  const encoded = clientReport.encode(input);
-  const decoded = clientReport.decode(encoded);
+  const encoded = requestTail.encode(input);
+  const decoded = requestTail.decode(encoded);
 
   expect(decoded[0]).toMatchObject(input);
   expect(decoded[1]).toEqual(encoded.length);

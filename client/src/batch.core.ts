@@ -8,6 +8,8 @@ import type {
 import { makeGeneratorFromNDJson, PushableAsyncGenerator } from "@direct.dev/shared";
 import { WireDecodeStream, wire, WireEncodeStream } from "@direct.dev/wire";
 
+import { isDirectHead, isRpcErrorResponse, isRpcSuccessResponse } from "./guards.js";
+
 export type BatchConfig = {
   /**
    * session ID associated with the client creating this batch.
@@ -75,19 +77,24 @@ export abstract class DirectRPCBatch {
     if (!config.preferJSON) {
       // by default we use a WireStream and encode content using the
       // appropriate Wire packers
-      const wireStream = new WireEncodeStream(config);
+      const wireStream = new WireEncodeStream();
 
       (async () => {
-        let result: IteratorResult<DirectRPCRequest, wire.ClientReport>;
+        await wireStream.pushHead(wire.requestHead.encode(config));
 
-        while ((result = await this.#requests.next()).value) {
+        let result: IteratorResult<DirectRPCRequest, wire.RequestTail>;
+        do {
+          result = await this.#requests.next();
+
           if (result.done) {
-            wireStream.close(wire.clientReport.encode(result.value));
-            return;
+            await wireStream.pushTail(wire.requestTail.encode(result.value), { compress: true });
+            break;
           }
 
-          wireStream.push(wire.RPCRequest.encode(result.value));
-        }
+          await wireStream.pushItem(wire.RPCRequest.encode(result.value), { compress: true });
+        } while (!result.done);
+
+        wireStream.close();
       })();
 
       this.bodyStream = wireStream;
@@ -98,12 +105,23 @@ export abstract class DirectRPCBatch {
 
       this.bodyStream = new ReadableStream({
         start: async (controller) => {
-          // push the sessionID as the first entry on the stream
-          controller.enqueue(encoder.encode(JSON.stringify(config.sessionId) + "\n"));
+          // push the head as the first entry on the stream
+          controller.enqueue(
+            encoder.encode(JSON.stringify({ type: "head", value: { sessionId: config.sessionId } }) + "\n"),
+          );
 
-          for await (const request of this.#requests) {
-            controller.enqueue(encoder.encode(JSON.stringify(request) + "\n"));
-          }
+          let result: IteratorResult<DirectRPCRequest, wire.RequestTail>;
+
+          do {
+            result = await this.#requests.next();
+
+            if (result.done) {
+              controller.enqueue(encoder.encode(JSON.stringify({ type: "tail", value: result.value }) + "\n"));
+              break;
+            }
+
+            controller.enqueue(encoder.encode(JSON.stringify({ type: "item", value: result.value }) + "\n"));
+          } while (!result.done);
 
           controller.close();
         },
@@ -151,9 +169,12 @@ export abstract class DirectRPCBatch {
    * encoded on the Wirestream to transmit the message.
    */
   async dispatch(
-    metrics: wire.ClientReport,
+    metrics: wire.RequestTail,
   ): Promise<
-    | AsyncGenerator<{ done: boolean; value: DirectRPCHead | DirectRPCSuccessResponse | DirectRPCErrorResponse }>
+    | AsyncGenerator<
+        | { type: "head"; value: DirectRPCHead }
+        | { type: "item"; value: DirectRPCSuccessResponse | DirectRPCErrorResponse }
+      >
     | undefined
   > {
     try {
@@ -181,27 +202,45 @@ export abstract class DirectRPCBatch {
       if (!this.config.preferJSON) {
         // if we're using the default Wire format, then use a WireDecodeStream
         // to yield values
-        return new WireDecodeStream(resBody).getReader((input) => {
-          return wire.RPCResponse.decode(input)[0];
+        return new WireDecodeStream(resBody).getReader({
+          head: (input) => wire.responseHead.decode(input)[0],
+          item: (input) => wire.RPCResponse.decode(input)[0],
+          tail: () => null, // tails are never used, ignore them completely
         });
       } else {
         return (async function* parse() {
-          for await (const value of makeGeneratorFromNDJson(resBody)) {
-            const typedVal = value as DirectRPCHead | DirectRPCSuccessResponse | DirectRPCErrorResponse;
+          for await (const segment of makeGeneratorFromNDJson(resBody)) {
+            const typedSegment = segment as
+              | { type: "head"; value: DirectRPCHead }
+              | { type: "item"; value: DirectRPCSuccessResponse | DirectRPCErrorResponse };
 
-            // convert dates back to date-objects to mimic behaviour of Wire
-            if ("blockHeightExpiresAt" in typedVal && typedVal.blockHeightExpiresAt) {
-              typedVal.blockHeightExpiresAt = new Date(typedVal.blockHeightExpiresAt);
+            switch (typedSegment.type) {
+              case "item":
+                if ("expiresAt" in typedSegment.value && typedSegment.value.expiresAt) {
+                  // mimic wire behaviour, making sure to convert dates back to
+                  // Date objects
+                  typedSegment.value.expiresAt = new Date(typedSegment.value.expiresAt);
+                }
+
+                if (!isRpcSuccessResponse(typedSegment.value) && !isRpcErrorResponse(typedSegment.value)) {
+                  throw new Error("DirectRPCBatch.dispatch: received invalid response structure");
+                }
+                break;
+
+              case "head":
+                if ("blockHeightExpiresAt" in typedSegment.value && typedSegment.value.blockHeightExpiresAt) {
+                  // mimic wire behaviour, making sure to convert dates back
+                  // to Date objects
+                  typedSegment.value.blockHeightExpiresAt = new Date(typedSegment.value.blockHeightExpiresAt);
+                }
+
+                if (!isDirectHead(typedSegment.value)) {
+                  throw new Error("DirectRPCBatch.dispatch: received invalid head structure");
+                }
+                break;
             }
 
-            if ("expiresAt" in typedVal && typedVal.expiresAt) {
-              typedVal.expiresAt = new Date(typedVal.expiresAt);
-            }
-
-            yield {
-              done: false,
-              value: typedVal,
-            };
+            yield typedSegment;
           }
         })();
       }

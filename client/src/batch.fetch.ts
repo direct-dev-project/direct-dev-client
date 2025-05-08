@@ -32,7 +32,6 @@ export class DirectRPCFetchBatch extends DirectRPCBatch {
       headers: !this.config.preferJSON
         ? {
             "Content-Type": "application/octet-stream",
-            "Content-Encoding": "identity",
           }
         : {
             "Content-Type": "application/x-ndjson",

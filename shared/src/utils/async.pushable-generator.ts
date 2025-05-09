@@ -40,7 +40,9 @@ export class PushableAsyncGenerator<T, TReturn = any> implements AsyncGenerator<
 
   constructor(cb?: (push: (value: T) => void) => Promise<TReturn>) {
     if (cb) {
-      cb((value) => this.push(value)).then((value) => this.close(value));
+      cb((value) => this.push(value))
+        .then((value) => this.close(value))
+        .catch((reason) => this.throw(reason));
     }
   }
 

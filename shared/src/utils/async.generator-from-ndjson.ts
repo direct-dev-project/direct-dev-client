@@ -2,15 +2,27 @@
  * utility that'll transform a ReadableStream of ND-JSON based content into a
  * generator
  */
-export async function* makeGeneratorFromNDJson<T>(stream: ReadableStream<Uint8Array>): AsyncGenerator<T> {
+export async function* makeGeneratorFromNDJson<T>(
+  stream: ReadableStream<Uint8Array>,
+  maxSizeInBytes?: number,
+): AsyncGenerator<T> {
   const decoder = new TextDecoder();
   const reader = stream.getReader();
   let buffer = "";
+  let readBytes = 0;
 
   while (true) {
     const { done, value } = await reader.read();
 
     if (value !== undefined) {
+      readBytes += value.length;
+
+      if (maxSizeInBytes != null && readBytes > maxSizeInBytes) {
+        // if stream input has exceeded maximum size, then stop reading more
+        // data
+        throw NDJSON_MAX_SIZE_ERR;
+      }
+
       buffer += decoder.decode(value);
 
       // iterate over all complete payloads by splitting the response when
@@ -35,3 +47,5 @@ export async function* makeGeneratorFromNDJson<T>(stream: ReadableStream<Uint8Ar
     yield JSON.parse(buffer);
   }
 }
+
+export const NDJSON_MAX_SIZE_ERR = new Error("makeGeneratorFromNDJson: maximum stream size has been exceeded");

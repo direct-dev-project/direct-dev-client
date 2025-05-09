@@ -14,6 +14,8 @@ export type WireStreamSegment =
  * blazingly fast writes of sequentiel entries of variable length.
  */
 export class WireEncodeStream extends ReadableStream<Uint8Array> {
+  public static readonly MAX_SIZE_ERR = new Error("WireEncodeStream: maximum stream size has been exceeded");
+
   /**
    * specifies the last pushed item type, so we can enforce correct ordering of
    * segments on the stream.
@@ -144,7 +146,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
     compress: boolean,
   ): Promise<void> {
     if (input.byteLength > this.#maxSize) {
-      throw new Error("WireEncodeStream: maximum stream size has been exceeded");
+      throw WireEncodeStream.MAX_SIZE_ERR;
     }
 
     //
@@ -235,6 +237,8 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
  * signature into an AsyncGenerator for convenient and fast stream processing.
  */
 export class WireDecodeStream {
+  public static readonly MAX_SIZE_ERR = new Error("WireDecodeStream: maximum stream size has been exceeded");
+
   /**
    * specifies if version of the input stream has been checked yet
    */
@@ -321,7 +325,7 @@ export class WireDecodeStream {
       this.#sizeInBytes += result.value.byteLength;
 
       if (this.#sizeInBytes > this.#maxSize) {
-        throw new Error("WireDecodeStream: maximum stream size has been exceeded");
+        throw WireDecodeStream.MAX_SIZE_ERR;
       }
 
       // push segment to buffer
@@ -456,3 +460,5 @@ const SEGMENT_TYPE_MAP = {
   [ITEM_CODE]: "item",
   [ITEM_CODE__COMPRESSED]: "item",
 } as const;
+
+export const wire = new Error("WireEncodeStream: maximum stream size has been exceeded");

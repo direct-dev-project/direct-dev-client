@@ -5,7 +5,9 @@
  * the context will include the full path name (but omit host), sorted search
  * params and a consistent hash fragment
  */
-export function normalizeContextFromUrl(input: string): string {
+export function normalizeContextFromUrl(
+  input: string = typeof window !== "undefined" ? window.location.href : "/",
+): string {
   const url = new URL(input, "http://localhost");
 
   // normalize searchParams

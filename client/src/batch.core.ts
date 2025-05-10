@@ -17,6 +17,11 @@ export type BatchConfig = {
   sessionId: string;
 
   /**
+   * optionally lock the request to a specific block height.
+   */
+  blockHeight?: string;
+
+  /**
    * specifies the Direct.dev endpoint, which this batch should be transmitted
    * to.
    */
@@ -107,7 +112,12 @@ export abstract class DirectRPCBatch {
         start: async (controller) => {
           // push the head as the first entry on the stream
           controller.enqueue(
-            encoder.encode(JSON.stringify({ type: "head", value: { sessionId: config.sessionId } }) + "\n"),
+            encoder.encode(
+              JSON.stringify({
+                type: "head",
+                value: { sessionId: config.sessionId, blockHeight: config.blockHeight },
+              }) + "\n",
+            ),
           );
 
           let result: IteratorResult<DirectRPCRequest, wire.RequestTail>;

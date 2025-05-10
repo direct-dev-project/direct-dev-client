@@ -24,6 +24,7 @@ import { isRpcErrorResponse, isRpcRequest, isRpcSuccessResponse } from "./guards
 import { createBatch } from "./util.create-batch.js";
 import { generateSessionId } from "./util.generate-session-id.js";
 import { isSupportedRequest } from "./util.is-supported-request.js";
+import { normalizeElementReference } from "./util.normalize-element-reference.js";
 import { normalizeContextFromUrl } from "./util.normalize-url.js";
 
 /**
@@ -66,19 +67,6 @@ export type DirectRPCClientConfig = {
   logLevel?: LogLevel;
 
   /**
-   * Specifies the duration during which requests are batched, causing a slight
-   * delay between initial request until requests are submitted to the
-   * Direct.dev backend, but reducing network overhead by combining multiple
-   * requests into one.
-   *
-   * @note Providing a negative value will bypass batching altogether and submit
-   *       requests instantly.
-   *
-   * @default 25
-   */
-  batchWindowMs?: number;
-
-  /**
    * If development mode is enabled, then the client will bypass Direct.dev
    * infrastructure by default for end-users. However, developers can opt into
    * this integration by adding ?directdev=true to the window URL.
@@ -94,6 +82,19 @@ export type DirectRPCClientConfig = {
   devMode?: boolean;
 
   /**
+   * Specifies the duration during which requests are batched, causing a slight
+   * delay between initial request until requests are submitted to the
+   * Direct.dev backend, but reducing network overhead by combining multiple
+   * requests into one.
+   *
+   * @note Providing a negative value will bypass batching altogether and submit
+   *       requests instantly.
+   *
+   * @default 25
+   */
+  batchWindowMs?: number;
+
+  /**
    * If enabled then the Direct RPC endpoint will respond using an NDJSON
    * format, which increases response times but improves developer experience.
    *
@@ -104,6 +105,14 @@ export type DirectRPCClientConfig = {
    * @default false
    */
   preferJSON?: boolean;
+
+  /**
+   * If enabled, then Direct will attempt to fetch primer packages to respond
+   * faster to user interactions (ie. clicks on interactive elements).
+   *
+   * @default false
+   */
+  predictOnClick?: boolean;
 
   /**
    * Collection of upstream data provider URLs; we utilize these providers in
@@ -344,15 +353,17 @@ export class DirectRPCClient {
     };
 
     // instantly fetch the initial primer package
-    this.#predictivePrimer();
+    this.#predictivePrimerFor("load", normalizeContextFromUrl());
 
-    // subscribe a global listener to handle lifecycle events
-    if (typeof document !== "undefined") {
-      document.addEventListener("visibilitychange", this.#handleVisibilityChange);
-    }
-
+    // subscribe to in-browser events to predictively prime cache
     if (typeof window !== "undefined") {
+      window.addEventListener("directdev:navigation", this.#handleNavigation);
       window.addEventListener("pagehide", this.#sendBeacon);
+      document.addEventListener("visibilitychange", this.#handleVisibilityChange);
+
+      if (config.predictOnClick === true) {
+        document.addEventListener("click", this.#handleClick, { capture: true });
+      }
     }
   }
 
@@ -527,18 +538,18 @@ export class DirectRPCClient {
    * trigger a request to Direct.dev layer, to fetch primer package for the
    * current context.
    */
-  async #predictivePrimer() {
+  async #predictivePrimerFor(event: string, context: string) {
     if (this.#devMode) {
       return;
     }
 
-    this.#logger.debug("#predictivePrimer", "requesting primer package for most popular requests");
+    this.#logger.debug("#predictivePrimerFor", "requesting primer package", { event, context });
 
     const req = {
       jsonrpc: "2.0",
       id: 1,
       method: "direct_primer",
-      params: [await sha256(normalizeContextFromUrl(typeof window !== "undefined" ? window.location.href : "/"))],
+      params: [event, await sha256(context)],
     };
 
     // push the primer request to the list of pending requests, and then
@@ -953,7 +964,33 @@ export class DirectRPCClient {
   }
 
   /**
-   * global listener for the "visibility change" event, which allows us to:
+   * handle clicks on interactive elements and predictively prime cache if
+   * relevant based on the clicked element.
+   */
+  #handleClick = (evt: Event) => {
+    const target = evt.target as HTMLElement;
+
+    // track only clicks on interactive elements
+    const el = target.closest("a, button, [role='button']") as HTMLElement | null;
+    if (!el) return;
+
+    // generate context from clicked element
+    const ref = normalizeElementReference(el);
+    const context = `${normalizeContextFromUrl()}::${ref}`;
+
+    this.#predictivePrimerFor("click", context);
+  };
+
+  /**
+   * handle SPA navigation and predictively prime cache for the newly opened
+   * URL.
+   */
+  #handleNavigation = () => {
+    this.#predictivePrimerFor("navigation", normalizeContextFromUrl());
+  };
+
+  /**
+   * handle the "visibility change" event, which allows us to:
    *
    * - re-fetch primer package if a user returns to the after a period of
    *   inactivity
@@ -967,7 +1004,7 @@ export class DirectRPCClient {
         return;
 
       case "visible":
-        this.#predictivePrimer();
+        this.#predictivePrimerFor("visibilityChange", normalizeContextFromUrl());
         break;
     }
   };
@@ -1027,4 +1064,27 @@ export class DirectRPCClient {
     clearTimeout(this.#batchTimeout);
     this.#batchTimeout = undefined;
   }
+}
+
+// monkey patching of pushState and replaceState, emitting CustomEvent to allow
+// safe interception of SPA navigation events
+if (typeof window !== "undefined") {
+  const dispatchNavEvent = () => window.dispatchEvent(new CustomEvent("directdev:navigation"));
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wrap = <T extends (...args: any[]) => any>(fn: T): ((...args: Parameters<T>) => ReturnType<T>) => {
+    return (...args: Parameters<T>): ReturnType<T> => {
+      try {
+        return fn.apply(this, args) as ReturnType<T>;
+      } finally {
+        dispatchNavEvent();
+      }
+    };
+  };
+
+  history.pushState = wrap(history.pushState);
+  history.replaceState = wrap(history.replaceState);
+
+  window.addEventListener("popstate", dispatchNavEvent);
+  window.addEventListener("hashchange", dispatchNavEvent);
 }

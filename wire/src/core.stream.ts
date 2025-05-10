@@ -146,7 +146,10 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
     compress: boolean,
   ): Promise<void> {
     if (input.byteLength > this.#maxSize) {
-      throw WireEncodeStream.MAX_SIZE_ERR;
+      // while gzip could technically bring us below the predefined maximum
+      // size, we do not want singular entries to decode to a size greater than
+      // the entire stream budget
+      throw new Error("WireEncodeStream: segment is larger than max stream size");
     }
 
     //

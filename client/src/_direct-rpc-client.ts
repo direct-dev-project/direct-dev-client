@@ -10,8 +10,10 @@ import type {
   SupportedNetworkId,
 } from "@direct.dev/shared";
 import {
+  LRUCache,
   Logger,
   PushableAsyncGenerator,
+  asyncTimeout,
   deriveProviderFromNodeUrl,
   deriveProviderFromRequest,
   makeDeferred,
@@ -32,6 +34,12 @@ import { normalizeContextFromUrl } from "./util.normalize-url.js";
  * goes down (this will be exponentially increased in case of repeated failures)
  */
 const BASE_BACKOFF_DURATION_MS = 5_000;
+
+/**
+ * configures the timeout after which inflight cache entries will be pruned
+ * from the cache, to avoid cache overloading.
+ */
+const INFLIGHT_CACHE_TIMEOUT_MS = 30_000;
 
 /**
  * Client configurations, mapping the client to your Direct.dev project and the
@@ -257,16 +265,16 @@ export class DirectRPCClient {
    * map of cacheable responses currently available locally, including their
    * expiration configurations
    */
-  #requestCache = new Map<RPCRequestHash, CacheEntry & { prefetched: boolean }>();
+  #requestCache = new LRUCache<RPCRequestHash, CacheEntry & { prefetched: boolean }>(1000);
 
   /**
    * map of currently in-flight requests, which allows re-use of existing
    * requests if the same ressource is fetched concurrently
    */
-  #inflightCache = new Map<
+  #inflightCache = new LRUCache<
     RPCRequestHash,
     Deferred<DirectRPCSuccessResponse | DirectRPCErrorResponse> & { prefetched: boolean }
-  >();
+  >(1000);
 
   /**
    * reference to the currently open batch, so that requests can be pushed onto
@@ -521,7 +529,7 @@ export class DirectRPCClient {
         this.#currBatch ??= createBatch(this.#batchConfig, this.#logger);
         this.#currBatch.push(req);
 
-        promise.then(() => {
+        Promise.race([promise, asyncTimeout(INFLIGHT_CACHE_TIMEOUT_MS)]).then(() => {
           this.#inflightCache.delete(reqHash);
         });
 

@@ -13,3 +13,4 @@ export * from "./utils/async.generator-from-ndjson.js";
 export * from "./utils/async.pushable-generator.js";
 export * from "./utils/async.timeout.js";
 export * from "./utils/logger.js";
+export * from "./utils/lru-cache.js";

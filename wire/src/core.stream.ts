@@ -17,10 +17,16 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
   public static readonly MAX_SIZE_ERR = new Error("WireEncodeStream: maximum stream size has been exceeded");
 
   /**
-   * specifies the last pushed item type, so we can enforce correct ordering of
-   * segments on the stream.
+   * specifies if a head has already been pushed onto this stream, so we can
+   * prevent multiple head segments in one stream.
    */
-  #lastSegmentType: "head" | "item" | "tail" | undefined;
+  #hasHead = false;
+
+  /**
+   * specifies if a tail has already been pushed onto this stream, so we can
+   * prevent multiple tail segments in one stream.
+   */
+  #hasTail = false;
 
   /**
    * contains the current size of the stream, so that integrations can prevent
@@ -90,15 +96,14 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
   /**
    * push a head segment onto the stream
    *
-   * @note only a single head is allowed per stream, and it must be the first
-   *       segment pushed onto the stream.
+   * @note only a single head is allowed per stream
    */
   async pushHead(input: string, options?: { compress: boolean }) {
-    if (this.#lastSegmentType !== undefined) {
-      throw new Error("WireEncodeStream: cannot push head after already pushing other segments");
+    if (this.#hasHead) {
+      throw new Error("WireEncodeStream: can only push one head per stream");
     }
 
-    this.#lastSegmentType = "head";
+    this.#hasHead = true;
 
     await this.#push(HEAD_CHAR, this.#textEncoder.encode(input), options?.compress ?? false);
   }
@@ -111,12 +116,6 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
    *       segment (if present)
    */
   async pushItem(input: string, options?: { compress: boolean }) {
-    if (this.#lastSegmentType === "tail") {
-      throw new Error("WireEncodeStream: cannot push item after having pushed a tail segment");
-    }
-
-    this.#lastSegmentType = "item";
-
     await this.#push(ITEM_CHAR, this.#textEncoder.encode(input), options?.compress ?? false);
   }
 
@@ -127,11 +126,11 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
    *       must be closed (ie. no more data may be pushed onto it).
    */
   async pushTail(input: string, options?: { compress: boolean }) {
-    if (this.#lastSegmentType === "tail") {
-      throw new Error("WireEncodeStream: cannot push multiple tail segments to stream");
+    if (this.#hasTail) {
+      throw new Error("WireEncodeStream: can only push one tail per stream");
     }
 
-    this.#lastSegmentType = "tail";
+    this.#hasTail = true;
 
     await this.#push(TAIL_CHAR, this.#textEncoder.encode(input), options?.compress ?? false);
   }
@@ -248,10 +247,16 @@ export class WireDecodeStream {
   #isVersionChecked = false;
 
   /**
-   * specifies the last pushed item type, so we can enforce correct ordering of
-   * segments on the stream.
+   * specifies if a head has already been read from this stream, so we can
+   * prevent multiple head segments in one stream.
    */
-  #lastSegmentType: "head" | "item" | "tail" | undefined;
+  #hasHead = false;
+
+  /**
+   * specifies if a tail has already been read from this stream, so we can
+   * prevent multiple tail segments in one stream.
+   */
+  #hasTail = false;
 
   /**
    * the provided readable stream, from which entries will be read and emitted
@@ -342,10 +347,6 @@ export class WireDecodeStream {
       }
 
       while (this.#buffer.length > this.#cursor) {
-        if (this.#lastSegmentType === "tail") {
-          throw new Error("WireDecodeStream: data found after tail segment");
-        }
-
         // if we haven't extracted the version of the parser yet, then do so
         // now to guarantee correctness of incoming data
         if (!this.#isVersionChecked) {
@@ -373,8 +374,18 @@ export class WireDecodeStream {
           );
         }
 
-        if (segmentType === "head" && this.#lastSegmentType !== undefined) {
-          throw new Error("WireDecodeStream: received head segment after already receiving other segments");
+        if (segmentType === "head") {
+          if (this.#hasHead) {
+            throw new Error("WireDecodeStream: received multiple head segments");
+          }
+          this.#hasHead = true;
+        }
+
+        if (segmentType === "tail") {
+          if (this.#hasTail) {
+            throw new Error("WireDecodeStream: received multiple tail segments");
+          }
+          this.#hasTail = true;
         }
 
         // @DECODE SEGMENT LENGTH
@@ -413,7 +424,6 @@ export class WireDecodeStream {
         const value = transformers[segmentType](this.#textDecoder.decode(decompressed));
 
         this.#cursor = end;
-        this.#lastSegmentType = segmentType;
 
         if (value != null) {
           yield {

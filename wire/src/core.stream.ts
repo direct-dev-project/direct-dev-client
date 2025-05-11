@@ -374,20 +374,6 @@ export class WireDecodeStream {
           );
         }
 
-        if (segmentType === "head") {
-          if (this.#hasHead) {
-            throw new Error("WireDecodeStream: received multiple head segments");
-          }
-          this.#hasHead = true;
-        }
-
-        if (segmentType === "tail") {
-          if (this.#hasTail) {
-            throw new Error("WireDecodeStream: received multiple tail segments");
-          }
-          this.#hasTail = true;
-        }
-
         // @DECODE SEGMENT LENGTH
         let len = 0;
         let shift = 0;
@@ -417,6 +403,20 @@ export class WireDecodeStream {
         if (end > this.#buffer.byteLength) {
           this.#cursor -= 1 + shift; // rewind LEB and typeCode
           break;
+        }
+
+        if (segmentType === "head") {
+          if (this.#hasHead) {
+            throw new Error("WireDecodeStream: received multiple head segments");
+          }
+          this.#hasHead = true;
+        }
+
+        if (segmentType === "tail") {
+          if (this.#hasTail) {
+            throw new Error("WireDecodeStream: received multiple tail segments");
+          }
+          this.#hasTail = true;
         }
 
         const payload = this.#buffer.subarray(this.#cursor, end);

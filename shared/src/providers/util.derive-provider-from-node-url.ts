@@ -12,7 +12,9 @@ export function deriveProviderFromNodeUrl(
   nodeUrl: string,
 ): SupportedProviderId | undefined {
   const matchingProviderEntry = Object.entries(supportedProviders).find(([, providerConfig]) => {
-    const providerUrls = providerConfig.networks[networkId]?.map((it) => compileNodeUrlTemplateToRegEx(it));
+    const providerUrls = providerConfig.networks[networkId]?.map(({ nodeUrlTemplate }) =>
+      compileNodeUrlTemplateToRegEx(nodeUrlTemplate),
+    );
 
     return providerUrls?.some((providerUrl) => providerUrl.test(nodeUrl));
   });

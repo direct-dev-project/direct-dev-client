@@ -918,9 +918,7 @@ export const WIRE_DICTIONARY = [
   // errors from Direct.dev
   "failed to receive response (Direct.dev)",
   "request timed out (Direct.dev)",
-  "request was not found in cache (Direct.dev)",
   "cannot parse block height param (Direct.dev)",
-  "the block height param is out of range (Direct.dev)",
 ];
 const DICTIONARY_OFFSET = 0b110000000;
 

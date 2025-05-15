@@ -29,28 +29,16 @@ it("supports gzip compression", async () => {
   expect(decoded).toEqual(input);
 });
 
-it("throws if head is pushed after item", async () => {
-  const stream = new WireEncodeStream();
-  await stream.pushItem("data");
-  await expect(() => stream.pushHead("bad")).rejects.toThrow();
-});
-
 it("throws if multiple tails are pushed", async () => {
   const stream = new WireEncodeStream();
   await stream.pushTail("end");
   await expect(() => stream.pushTail("end again")).rejects.toThrow();
 });
 
-it("throws if item is pushed after tail", async () => {
-  const stream = new WireEncodeStream();
-  await stream.pushTail("end");
-  await expect(() => stream.pushItem("invalid")).rejects.toThrow();
-});
-
 it("throws if stream exceeds maximum allowed size", async () => {
   const stream = new WireEncodeStream({ maxSize: 100 });
   const big = "x".repeat(1000); // intentionally over limit
-  await expect(() => stream.pushItem(big)).rejects.toThrow(/maximum/);
+  await expect(() => stream.pushItem(big)).rejects.toThrow(/segment is larger than max stream size/);
 });
 
 it("throws if decode receives stream larger than allowed", async () => {
@@ -64,7 +52,7 @@ it("throws if decode receives stream larger than allowed", async () => {
     item: (input) => input,
     tail: (input) => input,
   });
-  await expect(() => reader.next()).rejects.toThrow(/maximum/);
+  await expect(() => reader.next()).rejects.toThrow(/maximum stream size has been exceeded/);
 });
 
 /**

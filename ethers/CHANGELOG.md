@@ -1,5 +1,16 @@
 # @direct.dev/ethers
 
+## 0.4.0
+
+### Minor Changes
+
+- 5dd8b8b: refactor: improve cache key design to streamline delivery of correct data
+
+### Patch Changes
+
+- Updated dependencies [5dd8b8b]
+  - @direct.dev/client@0.4.0
+
 ## 0.3.1
 
 ### Patch Changes

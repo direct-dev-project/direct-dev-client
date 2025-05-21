@@ -1,5 +1,11 @@
 # @direct.dev/shared
 
+## 0.4.0
+
+### Minor Changes
+
+- 5dd8b8b: refactor: improve cache key design to streamline delivery of correct data
+
 ## 0.3.1
 
 ## 0.3.0

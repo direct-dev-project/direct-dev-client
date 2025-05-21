@@ -1,7 +1,7 @@
 {
   "name": "@direct.dev/web3",
   "description": "Web3.js provider for Direct.dev, optimizing performance and enhancing reliability.",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/direct-dev-project/direct-dev-client.git"

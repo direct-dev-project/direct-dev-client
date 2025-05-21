@@ -5,7 +5,6 @@ import { RPCRequest } from "./structures.rpc-request.js";
 export type RequestTailEntry = DirectRPCRequest & {
   timestamp: Date;
   blockHeight: string | undefined;
-  __encodedStr?: string;
 };
 
 export type RequestTail = {
@@ -41,7 +40,7 @@ export const requestTail = new Wire<RequestTail>({
 
 const requestTailEntryWire = new Wire<RequestTailEntry>({
   encode: (input) =>
-    (input.__encodedStr ?? RPCRequest.encode(input)) + pack.date(input.timestamp) + pack.nullableStr(input.blockHeight),
+    RPCRequest.encode(input, { truncated: true }) + pack.date(input.timestamp) + pack.nullableStr(input.blockHeight),
   decode: (input, cursor) => {
     const request = RPCRequest.decode(input, cursor);
     const timestamp = unpack.date(input, request[1]);
@@ -52,7 +51,6 @@ const requestTailEntryWire = new Wire<RequestTailEntry>({
         ...request[0],
         timestamp: timestamp[0],
         blockHeight: blockHeight[0] ?? undefined,
-        __encodedStr: input.slice(cursor, request[1]),
       },
       blockHeight[1],
     ];

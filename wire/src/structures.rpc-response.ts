@@ -6,7 +6,11 @@ export type RPCResponseStructure = DirectRPCResultResponse | DirectRPCErrorRespo
 /**
  * implementation of WirePackers for common eth response signatures
  */
-export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string | null | undefined]>(
+export const RPCResponse = new Wire<
+  RPCResponseStructure,
+  | [requestMethod: string | null | undefined, options: { truncated: boolean }]
+  | [requestMethod: string | null | undefined]
+>(
   {
     //
     // Direct.dev proprietary response structures
@@ -77,8 +81,25 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
       },
     },
 
-    rpc_error: {
+    rpc_success__truncated: {
       id: 4,
+      encode: (input) => pack.strOrNum((input as DirectRPCResultResponse).id),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+
+        return [
+          {
+            id: id[0],
+            result: undefined,
+            expiresAt: undefined,
+          },
+          id[1],
+        ];
+      },
+    },
+
+    rpc_error: {
+      id: 5,
       encode: (input) =>
         pack.strOrNum((input as DirectRPCErrorResponse).id) +
         pack.num((input as DirectRPCErrorResponse).error.code) +
@@ -104,13 +125,17 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
       },
     },
   },
-  (input, [requestMethod]) => {
+  (input, [requestMethod, options]) => {
     if ("result" in input) {
       switch (requestMethod) {
         case "direct_primer":
           return requestMethod;
 
         default:
+          if (options?.truncated) {
+            return "rpc_success__truncated";
+          }
+
           switch (typeof input.result) {
             case "string":
             case "bigint":

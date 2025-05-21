@@ -17,7 +17,7 @@ export type RPCRequestStructure = DirectRPCRequest & {
 /**
  * implementation of WirePackers for common eth request signatures
  */
-export const RPCRequest = new Wire<RPCRequestStructure>(
+export const RPCRequest = new Wire<RPCRequestStructure, [options: { truncated: boolean }] | []>(
   {
     direct_primer: {
       id: 1,
@@ -100,8 +100,44 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
       },
     },
 
-    eth_chainId: {
+    eth_call__truncated: {
       id: 4,
+      encode: (input) =>
+        pack.strOrNum(input.id) +
+        pack.str(input.params[0].to) +
+        pack.nullableStr(input.params[0].from) +
+        // @note -- this is where we handle block override during encoding
+        pack.str(input.__overrideBlockHeight ?? input.params[1]),
+      decode: (input, cursor) => {
+        const id = unpack.strOrNum(input, cursor);
+        const toParam = unpack.str(input, id[1]);
+        const fromParam = unpack.nullableStr(input, toParam[1]);
+        const blockHeight = unpack.str(input, fromParam[1]);
+
+        return [
+          {
+            method: "eth_call",
+            id: id[0],
+            params: [
+              {
+                to: toParam[0],
+                from: fromParam[0],
+                data: undefined,
+                input: undefined,
+                value: undefined,
+                gas: undefined,
+                gasPrice: undefined,
+              },
+              blockHeight[0],
+            ],
+          },
+          blockHeight[1],
+        ];
+      },
+    },
+
+    eth_chainId: {
+      id: 5,
       encode: (input) => pack.strOrNum(input.id),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -118,7 +154,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_gasPrice: {
-      id: 5,
+      id: 6,
       encode: (input) => pack.strOrNum(input.id),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -135,7 +171,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getBalance: {
-      id: 6,
+      id: 7,
       encode: (input) =>
         pack.strOrNum(input.id) +
         pack.str(input.params[0]) +
@@ -158,7 +194,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getBlockByHash: {
-      id: 7,
+      id: 8,
       encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]) + pack.bool(input.params[1]),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -177,7 +213,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getBlockByNumber: {
-      id: 8,
+      id: 9,
       encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]) + pack.bool(input.params[1]),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -196,7 +232,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getBlockTransactionCountByHash: {
-      id: 9,
+      id: 10,
       encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -214,7 +250,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getBlockTransactionCountByNumber: {
-      id: 10,
+      id: 11,
       encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -232,7 +268,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getCode: {
-      id: 11,
+      id: 12,
       encode: (input) =>
         pack.strOrNum(input.id) +
         pack.str(input.params[0]) +
@@ -255,7 +291,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getStorageAt: {
-      id: 12,
+      id: 13,
       encode: (input) =>
         pack.strOrNum(input.id) +
         pack.str(input.params[0]) +
@@ -280,7 +316,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getTransactionByBlockHashAndIndex: {
-      id: 13,
+      id: 14,
       encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]) + pack.str(input.params[1]),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -299,7 +335,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getTransactionByBlockNumberAndIndex: {
-      id: 14,
+      id: 15,
       encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]) + pack.str(input.params[1]),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -318,7 +354,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getTransactionByHash: {
-      id: 15,
+      id: 16,
       encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -336,7 +372,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getTransactionCount: {
-      id: 16,
+      id: 17,
       encode: (input) =>
         pack.strOrNum(input.id) +
         pack.str(input.params[0]) +
@@ -359,7 +395,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getTransactionReceipt: {
-      id: 17,
+      id: 18,
       encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -377,7 +413,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getUncleByBlockHashAndIndex: {
-      id: 18,
+      id: 19,
       encode: (input) =>
         pack.strOrNum(input.id) + pack.str(input.params[0]) + pack.str(input.__overrideBlockHeight ?? input.params[1]),
       decode: (input, cursor) => {
@@ -397,7 +433,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getUncleByBlockNumberAndIndex: {
-      id: 19,
+      id: 20,
       encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]) + pack.str(input.params[1]),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -416,7 +452,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getUncleCountByBlockHash: {
-      id: 20,
+      id: 21,
       encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -434,7 +470,7 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
     },
 
     eth_getUncleCountByBlockNumber: {
-      id: 21,
+      id: 22,
       encode: (input) => pack.strOrNum(input.id) + pack.str(input.params[0]),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
@@ -451,7 +487,13 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
       },
     },
   },
-  (input) => input.method,
+  (input, [options]) => {
+    if (options?.truncated && input.method === "eth_call") {
+      return "eth_call__truncated";
+    }
+
+    return input.method;
+  },
 );
 
 /**

@@ -39,8 +39,7 @@ export const requestTail = new Wire<RequestTail>({
 });
 
 const requestTailEntryWire = new Wire<RequestTailEntry>({
-  encode: (input) =>
-    RPCRequest.encode(input, { truncated: true }) + pack.date(input.timestamp) + pack.nullableStr(input.blockHeight),
+  encode: (input) => RPCRequest.encode(input) + pack.date(input.timestamp) + pack.nullableStr(input.blockHeight),
   decode: (input, cursor) => {
     const request = RPCRequest.decode(input, cursor);
     const timestamp = unpack.date(input, request[1]);

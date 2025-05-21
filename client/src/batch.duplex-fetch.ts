@@ -25,7 +25,7 @@ export class DirectRPCDuplexFetchBatch extends DirectRPCBatch {
             "Content-Type": "application/octet-stream",
           }
         : {
-            "Content-Type": "application/x-ndjson",
+            "Content-Type": "text/plain",
           },
 
       // @ts-expect-error: TypeScript doesn't include support for duplex in

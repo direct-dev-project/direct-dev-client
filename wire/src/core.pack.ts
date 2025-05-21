@@ -917,8 +917,10 @@ export const WIRE_DICTIONARY = [
 
   // errors from Direct.dev
   "failed to receive response (Direct.dev)",
+  "request block is ahead of upstream RPC node (Direct.dev)",
   "request timed out (Direct.dev)",
-  "cannot parse block height param (Direct.dev)",
+  "request aborted due to timeout (Direct.dev)",
+  "upstream RPC node failed (Direct.dev)",
 ];
 const DICTIONARY_OFFSET = 0b110000000;
 

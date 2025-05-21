@@ -1,7 +1,3 @@
-import type { SupportedNetworkId, SupportedProviderId } from "@direct.dev/shared";
-
-export type SupportedRequestType = "default" | "slow" | "archive";
-
 export type SupportedProviderConfig = {
   title: string;
   logoUrl: string;
@@ -15,13 +11,13 @@ export type SupportedProviderConfig = {
       SupportedNetworkId,
       Array<{
         nodeUrlTemplate: string;
-        supportedRequestTypes: Set<SupportedRequestType>;
+        acceptedRoutingTags: Set<SupportedRoutingTag>;
       }>
     >
   >;
 };
 
-const allCategories = new Set(["default", "slow", "archive"] as const);
+const allRoutingTags = new Set(["default", "slow", "archive", "envio"] as const);
 
 /**
  * Configurations of all Web3 Data Providers supported by Direct.dev
@@ -37,103 +33,103 @@ export const supportedProviders: Record<SupportedProviderId, SupportedProviderCo
       arbitrum: [
         {
           nodeUrlTemplate: "https://arb-mainnet.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "arbitrum-sepolia": [
         {
           nodeUrlTemplate: "https://arb-sepolia.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       avalanche: [
         {
           nodeUrlTemplate: "https://avax-mainnet.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "avalanche-fuji": [
         {
           nodeUrlTemplate: "https://avax-fuji.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       base: [
         {
           nodeUrlTemplate: "https://base-mainnet.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "base-sepolia": [
         {
           nodeUrlTemplate: "https://base-sepolia.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       bsc: [
         {
           nodeUrlTemplate: "https://bnb-mainnet.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "bsc-testnet": [
         {
           nodeUrlTemplate: "https://bnb-testnet.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       ethereum: [
         {
           nodeUrlTemplate: "https://eth-mainnet.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "ethereum-holesky": [
         {
           nodeUrlTemplate: "https://eth-holesky.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "ethereum-sepolia": [
         {
           nodeUrlTemplate: "https://eth-sepolia.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       optimism: [
         {
           nodeUrlTemplate: "https://opt-mainnet.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "optimism-sepolia": [
         {
           nodeUrlTemplate: "https://opt-sepolia.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       polygon: [
         {
           nodeUrlTemplate: "https://polygon-mainnet.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "polygon-amoy": [
         {
           nodeUrlTemplate: "https://polygon-amoy.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       sonic: [
         {
           nodeUrlTemplate: "https://sonic-mainnet.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "sonic-testnet": [
         {
           nodeUrlTemplate: "https://sonic-blaze.g.alchemy.com/v2/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
     },
@@ -146,103 +142,103 @@ export const supportedProviders: Record<SupportedProviderId, SupportedProviderCo
       arbitrum: [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/arbitrum/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "arbitrum-sepolia": [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/arbitrum_sepolia/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       avalanche: [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/avalanche/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "avalanche-fuji": [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/avalanche_fuji/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       base: [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/base/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "base-sepolia": [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/base_sepolia/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       bsc: [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/bsc/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "bsc-testnet": [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/bsc_testnet_chapel/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       ethereum: [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/eth/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "ethereum-holesky": [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/eth_holesky/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "ethereum-sepolia": [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/eth_sepolia/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       optimism: [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/optimism/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "optimism-sepolia": [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/optimism_sepolia/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       polygon: [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/polygon/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "polygon-amoy": [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/polygon_amoy/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       sonic: [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/sonic_mainnet/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "sonic-testnet": [
         {
           nodeUrlTemplate: "https://rpc.ankr.com/sonic_blaze_testnet/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
     },
@@ -255,103 +251,103 @@ export const supportedProviders: Record<SupportedProviderId, SupportedProviderCo
       arbitrum: [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=arbitrum&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "arbitrum-sepolia": [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=arbitrum-sepolia&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       avalanche: [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=avalanche&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "avalanche-fuji": [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=avalanche-fuji&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       base: [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=base&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "base-sepolia": [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=base-sepolia&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       bsc: [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=bsc&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "bsc-testnet": [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=bsc-testnet&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       ethereum: [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=ethereum&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "ethereum-holesky": [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=holesky&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "ethereum-sepolia": [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=sepolia&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       optimism: [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=optimism&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "optimism-sepolia": [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=optimism-sepolia&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       polygon: [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=polygon&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "polygon-amoy": [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=polygon-amoy&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       sonic: [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=sonic&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "sonic-testnet": [
         {
           nodeUrlTemplate: "https://lb.drpc.org/ogrpc?network=sonic-testnet&dkey={apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
     },
@@ -364,91 +360,91 @@ export const supportedProviders: Record<SupportedProviderId, SupportedProviderCo
       arbitrum: [
         {
           nodeUrlTemplate: "https://arbitrum-mainnet.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "arbitrum-sepolia": [
         {
           nodeUrlTemplate: "https://arbitrum-sepolia.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       avalanche: [
         {
           nodeUrlTemplate: "https://avalanche-mainnet.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "avalanche-fuji": [
         {
           nodeUrlTemplate: "https://avalanche-fuji.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       base: [
         {
           nodeUrlTemplate: "https://base-mainnet.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "base-sepolia": [
         {
           nodeUrlTemplate: "https://base-sepolia.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       bsc: [
         {
           nodeUrlTemplate: "https://bsc-mainnet.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "bsc-testnet": [
         {
           nodeUrlTemplate: "https://bsc-testnet.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       ethereum: [
         {
           nodeUrlTemplate: "https://mainnet.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "ethereum-holesky": [
         {
           nodeUrlTemplate: "https://holesky.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "ethereum-sepolia": [
         {
           nodeUrlTemplate: "https://sepolia.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       optimism: [
         {
           nodeUrlTemplate: "https://optimism-mainnet.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "optimism-sepolia": [
         {
           nodeUrlTemplate: "https://optimism-sepolia.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       polygon: [
         {
           nodeUrlTemplate: "https://polygon-mainnet.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "polygon-amoy": [
         {
           nodeUrlTemplate: "https://polygon-amoy.infura.io/v3/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
     },
@@ -461,91 +457,91 @@ export const supportedProviders: Record<SupportedProviderId, SupportedProviderCo
       arbitrum: [
         {
           nodeUrlTemplate: "https://{endpoint}.arbitrum-mainnet.quiknode.pro/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "arbitrum-sepolia": [
         {
           nodeUrlTemplate: "https://{endpoint}.arbitrum-sepolia.quiknode.pro/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       avalanche: [
         {
           nodeUrlTemplate: "https://{endpoint}.avalanche-mainnet.quiknode.pro/{apiKey}/ext/bc/C/rpc/",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "avalanche-fuji": [
         {
           nodeUrlTemplate: "https://{endpoint}.avalanche-testnet.quiknode.pro/{apiKey}/ext/bc/C/rpc/",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       base: [
         {
           nodeUrlTemplate: "https://{endpoint}.base-mainnet.quiknode.pro/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "base-sepolia": [
         {
           nodeUrlTemplate: "https://{endpoint}.base-sepolia.quiknode.pro/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       bsc: [
         {
           nodeUrlTemplate: "https://{endpoint}.bsc.quiknode.pro/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "bsc-testnet": [
         {
           nodeUrlTemplate: "https://{endpoint}.bsc-testnet.quiknode.pro/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       ethereum: [
         {
           nodeUrlTemplate: "https://{endpoint}.quiknode.pro/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "ethereum-holesky": [
         {
           nodeUrlTemplate: "https://{endpoint}.ethereum-holesky.quiknode.pro/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "ethereum-sepolia": [
         {
           nodeUrlTemplate: "https://{endpoint}.ethereum-sepolia.quiknode.pro/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       optimism: [
         {
           nodeUrlTemplate: "https://{endpoint}.optimism.quiknode.pro/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "optimism-sepolia": [
         {
           nodeUrlTemplate: "https://{endpoint}.optimism-sepolia.quiknode.pro/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       polygon: [
         {
           nodeUrlTemplate: "https://{endpoint}.matic.quiknode.pro/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
       "polygon-amoy": [
         {
           nodeUrlTemplate: "https://{endpoint}.matic-amoy.quiknode.pro/{apiKey}",
-          supportedRequestTypes: allCategories,
+          acceptedRoutingTags: allRoutingTags,
         },
       ],
     },

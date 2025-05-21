@@ -1,4 +1,4 @@
-import type { DirectRPCRequest } from "@direct.dev/shared";
+import { normalizeRPCMethod } from "@direct.dev/shared";
 
 import { pack, unpack } from "./core.pack.js";
 import { Wire } from "./core.wire.js";
@@ -455,19 +455,67 @@ export const RPCRequest = new Wire<RPCRequestStructure>(
 );
 
 /**
- * blazingly fast and consistent hasher for ETH requests, which consistently
- * provides the same hash regardless of request ID and property ordering
+ * blazingly fast and consistent hasher for ETH requests, which gracefully
+ * handles scrambled property ordering and generates consistent hashes for
+ * idempotent requests regardless of ID
  */
 export function hashRPCRequest(
-  req: Omit<RPCRequestStructure, "id"> & { id?: string | number },
-  encodedStr?: string,
-): Promise<string> {
-  if (encodedStr !== undefined) {
+  input: {
+    requestMethod?: string;
+    requestBody: RPCRequestStructure;
+  },
+  __encodedRequest?: string,
+): Promise<DirectRequestHash> {
+  const reqMethod = input.requestMethod ?? normalizeRPCMethod(input.requestBody.method);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const reqId = idempotentMethods.has(reqMethod as any) ? "" : crypto.randomUUID();
+
+  if (__encodedRequest !== undefined) {
     return RPCRequest.hash(
-      { ...req, id: "" },
-      encodedStr.charAt(0) + pack.str("") + encodedStr.slice(unpack.strOrNum(encodedStr, 1)[1]),
-    );
+      { ...input.requestBody, id: reqId },
+
+      // hyper-optimizing; if we received an already encoded request structure,
+      // then re-use that string replacing only the ID segment (which we know to
+      // occurr first across all request types)
+      __encodedRequest.charAt(0) + pack.str(reqId) + __encodedRequest.slice(unpack.strOrNum(__encodedRequest, 1)[1]),
+    ) as Promise<DirectRequestHash>;
   }
 
-  return RPCRequest.hash({ ...req, id: "" }, undefined);
+  return RPCRequest.hash({ ...input.requestBody, id: reqId }, undefined) as Promise<DirectRequestHash>;
 }
+
+export const idempotentMethods = new Set([
+  "direct_primer",
+  "eth_blockNumber",
+  "eth_call",
+  "eth_chainId",
+  "eth_coinbase",
+  "eth_estimateGas",
+  "eth_gasPrice",
+  "eth_getBalance",
+  "eth_getBlockByHash",
+  "eth_getBlockByNumber",
+  "eth_getBlockTransactionCountByHash",
+  "eth_getBlockTransactionCountByNumber",
+  "eth_getCode",
+  "eth_getFilterChanges",
+  "eth_getFilterLogs",
+  "eth_getLogs",
+  "eth_getStorageAt",
+  "eth_getTransactionByBlockHashAndIndex",
+  "eth_getTransactionByBlockNumberAndIndex",
+  "eth_getTransactionByHash",
+  "eth_getTransactionCount",
+  "eth_getTransactionReceipt",
+  "eth_getUncleByBlockHashAndIndex",
+  "eth_getUncleByBlockNumberAndIndex",
+  "eth_getUncleCountByBlockHash",
+  "eth_getUncleCountByBlockNumber",
+  "eth_hashrate",
+  "eth_mining",
+  "eth_protocolVersion",
+  "eth_sign",
+  "net_version",
+  "web3_clientVersion",
+  "web3_sha3",
+] as const);

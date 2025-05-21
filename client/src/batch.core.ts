@@ -1,10 +1,4 @@
-import type {
-  DirectRPCErrorResponse,
-  DirectRPCHead,
-  DirectRPCRequest,
-  DirectRPCSuccessResponse,
-  Logger,
-} from "@direct.dev/shared";
+import type { Logger } from "@direct.dev/shared";
 import { makeGeneratorFromNDJson, PushableAsyncGenerator } from "@direct.dev/shared";
 import { WireDecodeStream, wire, WireEncodeStream } from "@direct.dev/wire";
 
@@ -34,6 +28,11 @@ export type BatchConfig = {
    * @default false
    */
   preferJSON: boolean | undefined;
+};
+
+type BatchRequest = {
+  requestBody: DirectRPCRequest;
+  requestKey: DirectCacheKey | undefined;
 };
 
 /**
@@ -74,7 +73,7 @@ export abstract class DirectRPCBatch {
   /**
    * the current number of requests that have been pushed to the upload stream.
    */
-  #requests = new PushableAsyncGenerator<DirectRPCRequest>();
+  #requests = new PushableAsyncGenerator<BatchRequest>();
 
   constructor(config: BatchConfig, logger: Logger) {
     this.logger = logger;
@@ -87,7 +86,7 @@ export abstract class DirectRPCBatch {
       (async () => {
         await wireStream.pushHead(wire.requestHead.encode(config));
 
-        let result: IteratorResult<DirectRPCRequest, wire.RequestTail>;
+        let result: IteratorResult<BatchRequest, wire.RequestTail>;
         do {
           result = await this.#requests.next();
 
@@ -96,7 +95,9 @@ export abstract class DirectRPCBatch {
             break;
           }
 
-          await wireStream.pushItem(wire.RPCRequest.encode(result.value), { compress: isCompressionSupported });
+          await wireStream.pushItem(wire.RPCRequest.encode(result.value.requestBody), {
+            compress: isCompressionSupported,
+          });
         } while (!result.done);
 
         wireStream.close();
@@ -120,7 +121,7 @@ export abstract class DirectRPCBatch {
             ),
           );
 
-          let result: IteratorResult<DirectRPCRequest, wire.RequestTail>;
+          let result: IteratorResult<BatchRequest, wire.RequestTail>;
 
           do {
             result = await this.#requests.next();
@@ -130,7 +131,9 @@ export abstract class DirectRPCBatch {
               break;
             }
 
-            controller.enqueue(encoder.encode(JSON.stringify({ type: "item", value: result.value }) + "\n"));
+            controller.enqueue(
+              encoder.encode(JSON.stringify({ type: "item", value: result.value.requestBody }) + "\n"),
+            );
           } while (!result.done);
 
           controller.close();
@@ -154,7 +157,7 @@ export abstract class DirectRPCBatch {
    * @note this returns a snapshot of the requests generator at the time of
    *       calling, it will not reflect values pushed afterwards.
    */
-  get requests(): Promise<DirectRPCRequest[]> {
+  get requests(): Promise<BatchRequest[]> {
     return this.#requests.toArray(this.#requests.size);
   }
 
@@ -162,15 +165,18 @@ export abstract class DirectRPCBatch {
    * add the request to the batch, writing it to the wire stream so that it
    * will be sent to the upstream server as soon as possible.
    */
-  push(req: DirectRPCRequest): void {
+  push(req: BatchRequest): void {
     this.#requests.push({
-      ...req,
+      requestKey: req.requestKey,
+      requestBody: {
+        ...req.requestBody,
 
-      // re-map ids of requests, so that they're equal to the index of the
-      // request in the batch list (this is useful when receiving responses as
-      // it allows us to quickly identify the associated request hash and
-      // resolve the correct inflight promise)
-      id: this.#requests.size + 1,
+        // re-map ids of requests, so that they're equal to the index of the
+        // request in the batch list (this is useful when receiving responses as
+        // it allows us to quickly identify the associated request hash and
+        // resolve the correct inflight promise)
+        id: this.#requests.size + 1,
+      },
     });
   }
 
@@ -183,7 +189,7 @@ export abstract class DirectRPCBatch {
   ): Promise<
     | AsyncGenerator<
         | { type: "head"; value: DirectRPCHead }
-        | { type: "item"; value: DirectRPCSuccessResponse | DirectRPCErrorResponse }
+        | { type: "item"; value: DirectRPCResultResponse | DirectRPCErrorResponse }
       >
     | undefined
   > {
@@ -214,7 +220,21 @@ export abstract class DirectRPCBatch {
         // to yield values
         return new WireDecodeStream(resBody).getReader({
           head: (input) => wire.responseHead.decode(input)[0],
-          item: (input) => wire.RPCResponse.decode(input)[0],
+          item: (input) => {
+            // slight CPU overhead (~0,01-0,05ms pr. response object), ensuring
+            // that responses decoded through the Wire protocol will have
+            // identical structure to responses decoded through regular JSON
+            //
+            // namely, this ensures that "undefined" optional properties are
+            // omitted in the emitted object, whereas Wire will include them as
+            // undefined values
+            const entry = wire.RPCResponse.decode(input)[0];
+
+            return {
+              ...JSON.parse(JSON.stringify(wire.RPCResponse.decode(input)[0])),
+              expiresAt: "result" in entry ? entry.expiresAt : undefined,
+            };
+          },
           tail: () => null, // tails are never used, ignore them completely
         });
       } else {
@@ -222,7 +242,7 @@ export abstract class DirectRPCBatch {
           for await (const segment of makeGeneratorFromNDJson(resBody)) {
             const typedSegment = segment as
               | { type: "head"; value: DirectRPCHead }
-              | { type: "item"; value: DirectRPCSuccessResponse | DirectRPCErrorResponse };
+              | { type: "item"; value: DirectRPCResultResponse | DirectRPCErrorResponse };
 
             switch (typedSegment.type) {
               case "item":

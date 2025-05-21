@@ -5,7 +5,6 @@ import { custom } from "wagmi";
 import type { Transport } from "wagmi";
 
 import { DirectRPCClient, type DirectRPCClientConfig } from "@direct.dev/client";
-import type { DirectRPCRequest } from "@direct.dev/shared";
 
 /**
  * Create a Direct Wagmi transport, which wraps the DirectRPCClient and routes

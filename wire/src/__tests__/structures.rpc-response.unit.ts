@@ -18,7 +18,6 @@ it("should encode+decode primitive result values correctly", () => {
   const input: RPCResponseStructure = {
     id: 1,
     result: "string",
-    expiresWhenBlockHeightChanges: null,
     expiresAt: null,
   };
   const encoded = RPCResponse.encode(input, null);
@@ -32,7 +31,6 @@ it("should encode+decode json result values correctly", () => {
   const input: RPCResponseStructure = {
     id: 1,
     result: { nested: "value" },
-    expiresWhenBlockHeightChanges: null,
     expiresAt: null,
   };
   const encoded = RPCResponse.encode(input, null);

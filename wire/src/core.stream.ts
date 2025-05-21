@@ -2,7 +2,7 @@ import { gzip, gunzip } from "./util.gzip.js";
 
 // ID of the Wire stream version, added to allow backwards compatible
 // versioning of wire encoder/decoders between backend and clients
-const VERSION_ID = 1;
+export const WIRE_VERSION_ID = 1;
 
 export type WireStreamSegment =
   | { type: "head"; value: string }
@@ -90,7 +90,7 @@ export class WireEncodeStream extends ReadableStream<Uint8Array> {
     this.#maxSize = config?.maxSize ?? Infinity;
 
     this.#controllerRef = controllerRef;
-    this.#controllerRef.current?.enqueue(new Uint8Array([VERSION_ID]));
+    this.#controllerRef.current?.enqueue(new Uint8Array([WIRE_VERSION_ID]));
   }
 
   /**
@@ -352,7 +352,7 @@ export class WireDecodeStream {
         if (!this.#isVersionChecked) {
           const version = this.#buffer[this.#cursor++];
 
-          if (version !== VERSION_ID) {
+          if (version !== WIRE_VERSION_ID) {
             throw new Error(`WireDecodeStream: unsupported wire version '${version}'`);
           }
 

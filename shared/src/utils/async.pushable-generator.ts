@@ -32,12 +32,28 @@ export class PushableAsyncGenerator<T, TReturn = any> implements AsyncGenerator<
    */
   #writeCursor = 0;
 
+  /**
+   * reference to the tap callback, which will receive all values as they are
+   * pushed onto the stream.
+   */
+  #tapCb: (value: T) => void = () => {
+    /* noop */
+  };
+
   constructor(cb?: (push: (value: T) => void) => Promise<TReturn>) {
     if (cb) {
       cb((value) => this.push(value))
         .then((value) => this.close(value))
         .catch((reason) => this.throw(reason));
     }
+  }
+
+  /**
+   * apply a callback which will be triggered each time a new value is pushed
+   * onto the stream.
+   */
+  tap(cb: (value: T) => void) {
+    this.#tapCb = cb;
   }
 
   /**
@@ -48,6 +64,7 @@ export class PushableAsyncGenerator<T, TReturn = any> implements AsyncGenerator<
       throw new Error("PushableAsyncGenerator.push(): Generator is already closed");
     }
 
+    this.#tapCb(value);
     (this.#deferred[this.#writeCursor++] ??= makeDeferred()).__resolve({ done: false, value });
   }
 

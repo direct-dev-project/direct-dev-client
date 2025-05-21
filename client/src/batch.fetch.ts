@@ -20,7 +20,7 @@ export class DirectRPCFetchBatch extends DirectRPCBatch {
             "Content-Type": "application/octet-stream",
           }
         : {
-            "Content-Type": "application/x-ndjson",
+            "Content-Type": "text/plain",
           },
     });
   }

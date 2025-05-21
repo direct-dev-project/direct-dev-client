@@ -3,7 +3,6 @@ import type { Chain, PublicClient } from "viem";
 import { createPublicClient, custom, RpcRequestError } from "viem";
 
 import { DirectRPCClient, type DirectRPCClientConfig } from "@direct.dev/client";
-import type { DirectRPCRequest } from "@direct.dev/shared";
 
 /**
  * Create a Direct Viem client, which wraps the DirectRPCClient and routes

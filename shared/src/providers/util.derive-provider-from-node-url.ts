@@ -1,5 +1,3 @@
-import type { SupportedNetworkId, SupportedProviderId } from "../typings.providers.js";
-
 import { supportedProviders } from "./constants.supported-providers.js";
 import { compileNodeUrlTemplateToRegEx } from "./util.compile-node-url-template-to-regex.js";
 

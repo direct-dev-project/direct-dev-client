@@ -1,5 +1,3 @@
-import type { DirectRPCRequest } from "@direct.dev/shared";
-
 import { pack, unpack } from "./core.pack.js";
 import { Wire } from "./core.wire.js";
 import { RPCRequest } from "./structures.rpc-request.js";

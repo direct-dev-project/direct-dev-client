@@ -1,9 +1,3 @@
-import type {
-  DirectRPCHead,
-  DirectRPCErrorResponse,
-  DirectRPCRequest,
-  DirectRPCSuccessResponse,
-} from "@direct.dev/shared";
 import { isRecord } from "@direct.dev/shared";
 
 /**
@@ -42,7 +36,7 @@ export function isRpcRequest(input: unknown): input is DirectRPCRequest & { json
  * handcrafted validator for success RPC Responses, designed to do blazingly
  * fast validation of unknown input with zero dependencies in the client layer.
  */
-export function isRpcSuccessResponse(input: unknown): input is DirectRPCSuccessResponse {
+export function isRpcSuccessResponse(input: unknown): input is DirectRPCResultResponse {
   if (!isRecord(input)) {
     return false;
   }

@@ -69,4 +69,32 @@ export class LRUCache<K, V> {
   delete(key: K) {
     this.#cache.delete(key);
   }
+
+  /**
+   * clear all entries from within the cache
+   */
+  clear() {
+    this.#cache.clear();
+  }
+
+  /**
+   * return the list of keys currently inserted into the cache
+   */
+  keys() {
+    return this.#cache.keys();
+  }
+
+  /**
+   * return the list of values currently inserted into the cache
+   */
+  values() {
+    return this.#cache.values();
+  }
+
+  /**
+   * return the list of entries currently inserted into the cache
+   */
+  entries() {
+    return this.#cache.entries();
+  }
 }

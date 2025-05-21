@@ -1,9 +1,7 @@
-import type { DirectRPCErrorResponse, DirectRPCSuccessResponse } from "@direct.dev/shared";
-
 import { pack, unpack } from "./core.pack.js";
 import { Wire } from "./core.wire.js";
 
-export type RPCResponseStructure = DirectRPCSuccessResponse | DirectRPCErrorResponse;
+export type RPCResponseStructure = DirectRPCResultResponse | DirectRPCErrorResponse;
 
 /**
  * implementation of WirePackers for common eth response signatures
@@ -16,7 +14,7 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
 
     direct_primer: {
       id: 1,
-      encode: (input) => pack.strOrNum((input as DirectRPCSuccessResponse).id),
+      encode: (input) => pack.strOrNum(input.id),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
 
@@ -38,21 +36,18 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
     rpc_success__primitive: {
       id: 2,
       encode: (input) =>
-        pack.strOrNum((input as DirectRPCSuccessResponse).id) +
-        pack.nullableBool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges) +
-        pack.nullableDate((input as DirectRPCSuccessResponse).expiresAt) +
-        pack.primitive((input as DirectRPCSuccessResponse).result as string),
+        pack.strOrNum(input.id) +
+        pack.nullableDate((input as DirectRPCResultResponse).expiresAt) +
+        pack.primitive((input as DirectRPCResultResponse).result as string),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
-        const expiresWhenBlockHeightChanges = unpack.nullableBool(input, id[1]);
-        const expiresAt = unpack.nullableDate(input, expiresWhenBlockHeightChanges[1]);
+        const expiresAt = unpack.nullableDate(input, id[1]);
         const result = unpack.primitive(input, expiresAt[1]);
 
         return [
           {
             id: id[0],
             result: result[0],
-            expiresWhenBlockHeightChanges: expiresWhenBlockHeightChanges[0],
             expiresAt: expiresAt[0],
           },
           result[1],
@@ -63,21 +58,18 @@ export const RPCResponse = new Wire<RPCResponseStructure, [requestMethod: string
     rpc_success__json: {
       id: 3,
       encode: (input) =>
-        pack.strOrNum((input as DirectRPCSuccessResponse).id) +
-        pack.nullableBool((input as DirectRPCSuccessResponse).expiresWhenBlockHeightChanges) +
-        pack.nullableDate((input as DirectRPCSuccessResponse).expiresAt) +
-        pack.json((input as DirectRPCSuccessResponse).result),
+        pack.strOrNum((input as DirectRPCResultResponse).id) +
+        pack.nullableDate((input as DirectRPCResultResponse).expiresAt) +
+        pack.json((input as DirectRPCResultResponse).result),
       decode: (input, cursor) => {
         const id = unpack.strOrNum(input, cursor);
-        const expiresWhenBlockHeightChanges = unpack.nullableBool(input, id[1]);
-        const expiresAt = unpack.nullableDate(input, expiresWhenBlockHeightChanges[1]);
+        const expiresAt = unpack.nullableDate(input, id[1]);
         const result = unpack.json(input, expiresAt[1]);
 
         return [
           {
             id: id[0],
             result: result[0],
-            expiresWhenBlockHeightChanges: expiresWhenBlockHeightChanges[0],
             expiresAt: expiresAt[0],
           },
           result[1],

@@ -2,32 +2,24 @@
  * Definition of supported Web3 Data providers within the Direct.dev
  * infrastructure.
  */
-export type SupportedProviderId = "ankr" | "alchemy" | "drpc" | "infura" | "quicknode";
+type SupportedProviderId = "ankr" | "alchemy" | "drpc" | "infura" | "quicknode";
 
 /**
  * Definition of supported Web3 chain types|  used to determine how to correctly
  * handle analysis of incoming requests and responses.
  */
-export type SupportedChainType = "EVM" | "SVM";
+type SupportedChainType = "EVM" | "SVM";
 
 /**
  * Definition of all supported chains by Direct.dev.
  */
-export type SupportedChainId =
-  | "base"
-  | "arbitrum"
-  | "optimism"
-  | "sonic"
-  | "bsc"
-  | "avalanche"
-  | "ethereum"
-  | "polygon";
+type SupportedChainId = "base" | "arbitrum" | "optimism" | "sonic" | "bsc" | "avalanche" | "ethereum" | "polygon";
 
 /**
  * Definition of networks supported by Direct.dev (internally maps to specific
  * provider nodes)
  */
-export type SupportedNetworkId =
+type SupportedNetworkId =
   | "base-sepolia"
   | "base"
   | "arbitrum"
@@ -45,3 +37,9 @@ export type SupportedNetworkId =
   | "ethereum-holesky"
   | "polygon"
   | "polygon-amoy";
+
+/**
+ * Definition of upstream request routing tags; used for effecient and correct
+ * distribution of requests
+ */
+type SupportedRoutingTag = "default" | "slow" | "archive" | "envio";

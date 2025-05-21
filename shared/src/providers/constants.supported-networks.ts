@@ -1,5 +1,3 @@
-import type { SupportedNetworkId, SupportedChainId, SupportedChainType } from "@direct.dev/shared";
-
 export type SupportedNetworkConfig = {
   /**
    * human-readable ID of the chain, which can be used to group networks

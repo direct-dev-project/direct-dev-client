@@ -1,5 +1,3 @@
-import type { SupportedChainId } from "@direct.dev/shared";
-
 export type SupportedChainConfig = {
   /**
    * Human-readable label for the chain

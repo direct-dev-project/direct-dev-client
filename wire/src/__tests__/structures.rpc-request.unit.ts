@@ -360,8 +360,8 @@ describe("hashRPCRequest", () => {
     //
     // act
     //
-    const hash1 = await hashRPCRequest({ id: 1, method: "eth_accounts", params: [] });
-    const hash2 = await hashRPCRequest({ id: 2, method: "eth_accounts", params: [] });
+    const hash1 = await hashRPCRequest({ requestBody: { id: 1, method: "eth_getBalance", params: ["0x0", "0x0"] } });
+    const hash2 = await hashRPCRequest({ requestBody: { id: 2, method: "eth_getBalance", params: ["0x0", "0x0"] } });
 
     //
     // assert
@@ -374,26 +374,30 @@ describe("hashRPCRequest", () => {
     // act
     //
     const hash1 = await hashRPCRequest({
-      id: 1,
-      method: "eth_call",
-      params: [
-        {
-          to: "0x0",
-          from: "0x0",
-        },
-        "latest",
-      ],
+      requestBody: {
+        id: 1,
+        method: "eth_call",
+        params: [
+          {
+            to: "0x0",
+            from: "0x0",
+          },
+          "latest",
+        ],
+      },
     });
     const hash2 = await hashRPCRequest({
-      id: 2,
-      method: "eth_call",
-      params: [
-        {
-          from: "0x0",
-          to: "0x0",
-        },
-        "latest",
-      ],
+      requestBody: {
+        id: 2,
+        method: "eth_call",
+        params: [
+          {
+            from: "0x0",
+            to: "0x0",
+          },
+          "latest",
+        ],
+      },
     });
 
     //
@@ -407,26 +411,30 @@ describe("hashRPCRequest", () => {
     // act
     //
     const hash1 = await hashRPCRequest({
-      id: 1,
-      method: "eth_call",
-      params: [
-        {
-          to: "0x0",
-          from: "0x0",
-        },
-        "latest",
-      ],
+      requestBody: {
+        id: 1,
+        method: "eth_call",
+        params: [
+          {
+            to: "0x0",
+            from: "0x0",
+          },
+          "latest",
+        ],
+      },
     });
     const hash2 = await hashRPCRequest({
-      id: 2,
-      method: "eth_call",
-      params: [
-        {
-          to: "0x1",
-          from: "0x0",
-        },
-        "latest",
-      ],
+      requestBody: {
+        id: 2,
+        method: "eth_call",
+        params: [
+          {
+            to: "0x1",
+            from: "0x0",
+          },
+          "latest",
+        ],
+      },
     });
 
     //

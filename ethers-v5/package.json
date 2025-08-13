@@ -1,0 +1,55 @@
+{
+  "name": "@direct.dev/ethers-v5",
+  "description": "Ethers provider for Direct.dev, optimizing performance and enhancing reliability.",
+  "version": "0.5.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/direct-dev-project/direct-dev-client.git"
+  },
+  "bugs": "https://github.com/direct-dev-project/direct-dev-client/issues",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "keywords": [
+    "ethers",
+    "ethersjs",
+    "eth",
+    "ethereum",
+    "dapps",
+    "web3",
+    "typescript"
+  ],
+  "type": "module",
+  "files": [
+    "src/**/*",
+    "lib/**/*",
+    "LICENSE.md"
+  ],
+  "sideEffects": false,
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
+  },
+  "scripts": {
+    "eslint": "eslint --cache --no-error-on-unmatched-pattern --max-warnings 5 'src/**/*.{js,jsx,ts,tsx,mjs}'",
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "dev:typescript": "tsc --watch --preserveWatchOutput",
+    "dev:rollup": "rollup -c rollup.config.js --watch",
+    "build": "rollup -c rollup.config.js",
+    "build:typescript": "tsc -p tsconfig.json",
+    "prepublishOnly": "rm -rf lib/ && pnpm run build && pnpm run build:typescript"
+  },
+  "dependencies": {
+    "@direct.dev/client": "workspace:*"
+  },
+  "peerDependencies": {
+    "@ethersproject/providers": "5.x"
+  },
+  "devDependencies": {
+    "@direct.dev/tooling-eslint-config": "workspace:*",
+    "@direct.dev/tooling-rollup-config": "workspace:*",
+    "@direct.dev/tooling-typescript-config": "workspace:*",
+    "@direct.dev/tooling-vitest-config": "workspace:*"
+  }
+}

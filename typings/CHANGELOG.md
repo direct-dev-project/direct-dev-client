@@ -1,0 +1,20 @@
+# @direct.dev/typings
+
+## 0.5.0
+
+### Minor Changes
+
+- 8c1f2c0: feat: implement direct_getTransactionReceipt for real-time transaction finality
+- 8c1f2c0: feat: implement Direct Sync for ahead-of-time data delivery and 0ms latency
+
+## 0.4.1
+
+### Patch Changes
+
+- b49e213: perf: truncate data ingestion to reduce bandwidth usage
+
+## 0.4.0
+
+### Minor Changes
+
+- 5dd8b8b: refactor: improve cache key design to streamline delivery of correct data

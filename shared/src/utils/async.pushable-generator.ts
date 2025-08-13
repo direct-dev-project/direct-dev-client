@@ -1,0 +1,196 @@
+import type { Deferred } from "./async.deferred.js";
+import { makeDeferred } from "./async.deferred.js";
+
+/**
+ * creates an AsyncGenerator interface, to which values can easily be pushed
+ * during runtime - similar to streaming, but without having to encode/decode
+ * values.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export class PushableAsyncGenerator<T, TReturn = any> implements AsyncGenerator<T, TReturn> {
+  /**
+   * keeps track of whether the generator has been closed, in which case we
+   * disallow pushing further entries onto it.
+   */
+  #isClosed = false;
+
+  /**
+   * internal collection of promises, which are resolved when content is being
+   * pushed into the generator
+   */
+  #deferred: Array<Deferred<IteratorResult<T, TReturn>>> = [];
+
+  /**
+   * cursor pointing to the next promise that should be read while iterating
+   * through the stream
+   */
+  #readCursor = 0;
+
+  /**
+   * cursor pointing to the next promise that should be resolved, when pushing
+   * entries or closing the generator
+   */
+  #writeCursor = 0;
+
+  /**
+   * reference to the tap callback, which will receive all values as they are
+   * pushed onto the stream.
+   */
+  #tapCb: (value: T) => void = () => {
+    /* noop */
+  };
+
+  /**
+   * collection of tee'd generators, to which new values should also be pushed
+   * to mimic streaming behaviour.
+   */
+  #tees: Array<PushableAsyncGenerator<T, TReturn>> = [];
+
+  constructor(cb?: (push: (value: T) => void) => Promise<TReturn>) {
+    if (cb) {
+      cb((value) => this.push(value))
+        .then((value) => this.close(value))
+        .catch((reason) => this.throw(reason));
+    }
+  }
+
+  /**
+   * applies a callback which will be triggered each time a new value is pushed
+   * onto the stream.
+   */
+  tap(cb: (value: T) => void) {
+    this.#tapCb = cb;
+  }
+
+  /**
+   * pushes a new value onto the generator at runtime
+   */
+  push(value: T) {
+    if (this.#isClosed) {
+      throw new Error("PushableAsyncGenerator.push(): Generator is already closed");
+    }
+
+    this.#tapCb(value);
+
+    (this.#deferred[this.#writeCursor++] ??= makeDeferred()).__resolve({ done: false, value });
+    this.#tees.forEach((it) => it.push(value));
+  }
+
+  /**
+   * closes the generator, allowing iterators to stop looping after receiving
+   * this value.
+   */
+  close(value: TReturn) {
+    if (this.#isClosed) {
+      throw new Error("PushableAsyncGenerator.close(): Generator is already closed");
+    }
+
+    this.#isClosed = true;
+
+    (this.#deferred[this.#writeCursor++] ??= makeDeferred()).__resolve({ done: true, value });
+    this.#tees.forEach((it) => it.close(value));
+  }
+
+  /**
+   * basic utility to "tee" (ie. split) the generator, to allow multiple
+   * consumers to read the same stream of results.
+   *
+   * @note tee will split the generator from the current read cursor, so values
+   *       that have already been read will be silently dropped on the tee'd
+   *       generator.
+   */
+  tee(): AsyncGenerator<T, TReturn> {
+    const result = new PushableAsyncGenerator<T, TReturn>();
+    this.#tees.push(result);
+
+    return result;
+  }
+
+  /**
+   * tiny helper to create a promise which resolves once the generator is
+   * closed.
+   */
+  async wait(): Promise<void> {
+    if (this.#isClosed) {
+      await this.#deferred[this.#writeCursor - 1];
+
+      // instantly resolve if the stream has already closed
+      return;
+    }
+
+    let i = this.#readCursor;
+
+    while (true) {
+      const nextResult = await (this.#deferred[i++] ??= makeDeferred());
+
+      if (nextResult.done) {
+        // we cannot iterate further than the length of the stream, break loop
+        // if generator ends
+        break;
+      }
+    }
+  }
+
+  /**
+   * reads the current size of the generator, if it was transformed to an array.
+   */
+  get size(): number {
+    return this.#isClosed ? this.#writeCursor - 1 : this.#writeCursor;
+  }
+
+  /**
+   * specifies if the generator has been closed yet
+   */
+  get isClosed() {
+    return this.#isClosed;
+  }
+
+  //
+  // implementation of the AsyncGenerator spec
+  //
+
+  async next() {
+    if (this.#readCursor >= this.#writeCursor && this.#isClosed) {
+      return (await this.#deferred[this.#writeCursor - 1]) as IteratorReturnResult<TReturn>;
+    }
+
+    const readCursor = this.#readCursor++;
+    const result = await (this.#deferred[readCursor] ??= makeDeferred());
+
+    // dispose items as data is being read
+    if (!result.done) {
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete this.#deferred[readCursor];
+    }
+
+    return result;
+  }
+
+  async return(value: TReturn) {
+    if (this.#isClosed) {
+      return { done: true, value } as const;
+    }
+
+    this.#isClosed = true;
+
+    return (this.#deferred[this.#writeCursor++] ??= makeDeferred()).__resolve({ done: true, value });
+  }
+
+  async throw(reason: unknown) {
+    if (this.#isClosed) {
+      throw reason;
+    }
+
+    this.#isClosed = true;
+
+    return (this.#deferred[this.#writeCursor++] ??= makeDeferred()).__reject(reason);
+  }
+
+  [Symbol.asyncIterator]() {
+    return this;
+  }
+
+  async [Symbol.asyncDispose]() {
+    this.#deferred = [];
+  }
+}

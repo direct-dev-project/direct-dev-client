@@ -9,12 +9,14 @@ import {
   writeToSessionStorage,
 } from "@direct.dev/shared";
 
+import { DEFAULT_FAILOVER } from "./constants.js";
 import { DirectBlockHeightManager } from "./core.block-height.js";
 import { DirectCacheManager } from "./core.cache.js";
 import { DirectClockManager } from "./core.clock.js";
 import { DirectRequestRouter } from "./core.request.js";
 import { DirectSyncManager } from "./core.sync.js";
 import { DirectTelemetryManager } from "./core.telemetry.js";
+import { configSchema } from "./schemas.js";
 
 /**
  * Client configurations, mapping the client to your Direct.dev project and the
@@ -32,7 +34,7 @@ export type DirectRPCClientConfig = {
    * which allows your project to cold start faster - this removes latency on
    * initial requests after periods of inactivity.
    */
-  projectToken?: string;
+  projectToken?: string | null;
 
   /**
    * Override the baseUrl used when connecting to Direct infrastructure, useful
@@ -40,14 +42,14 @@ export type DirectRPCClientConfig = {
    *
    * @default "https://rpc.direct.dev"
    */
-  baseUrl?: string;
+  baseUrl?: string | null;
 
   /**
    * Specifies the verbosity of logging from the DirectClient
    *
    * @default "info"
    */
-  logLevel?: LogLevel;
+  logLevel?: LogLevel | null;
 
   /**
    * If development mode is enabled, then the client will bypass Direct.dev
@@ -62,7 +64,7 @@ export type DirectRPCClientConfig = {
    *
    * @default false
    */
-  devMode?: boolean;
+  devMode?: boolean | null;
 
   /**
    * Specifies the duration during which requests are batched, causing a slight
@@ -75,7 +77,7 @@ export type DirectRPCClientConfig = {
    *
    * @default 25
    */
-  batchWindowMs?: number;
+  batchWindowMs?: number | null;
 
   /**
    * Configures the format used when transmitting JSON-RPC requests from client
@@ -87,7 +89,7 @@ export type DirectRPCClientConfig = {
    *
    * @default "wire"
    */
-  preferredFormat?: "wire" | "ndjson" | "jsonrpc";
+  preferredFormat?: "wire" | "ndjson" | "jsonrpc" | null;
 
   /**
    * Allows disabling of WebSocket-based state synchronization between client
@@ -105,20 +107,20 @@ export type DirectRPCClientConfig = {
    *
    * @default false
    */
-  disableSync?: boolean;
+  disableSync?: boolean | null;
 
   /**
    * Collection of upstream data provider URLs; we utilize these providers in
    * case of downtime on Direct.dev to provide automatic fail-over directly to
    * your own provider nodes.
    */
-  failover: string[];
+  failover?: string[] | null;
 
   /**
    * Enable network inspection, prompting the Direct.dev client to trigger faux
    * requests for RPC cache hits and sync events.
    */
-  networkInspect?: boolean;
+  networkInspect?: boolean | null;
 };
 
 type FetchInput = DirectRPCRequest & { jsonrpc: string };
@@ -152,7 +154,9 @@ export class DirectRPCClient {
    */
   readonly #onBlockHeightHandlers = new Set<(blockHeight: RPCBlockHeight, expiresAt: Date) => void>();
 
-  constructor(config: DirectRPCClientConfig) {
+  constructor(rawConfig: DirectRPCClientConfig) {
+    const config = configSchema(rawConfig);
+
     // generate a persistent session ID for this project, so we can analyze
     // access patterns across networks in Direct.dev infrastructure
     const sessionIdKey = `sessionId:${config.projectId}`;
@@ -220,7 +224,7 @@ export class DirectRPCClient {
 
         devMode: this.devMode,
         endpointUrl: this.endpointUrl,
-        providerNodes: config.failover,
+        providerNodes: config.failover ?? DEFAULT_FAILOVER[config.networkId],
 
         preferredFormat: config.preferredFormat ?? "wire",
         batchWindowMs: config.batchWindowMs ?? 25,
@@ -289,9 +293,10 @@ export class DirectRPCClient {
       const req = reqsById.get(res.id);
 
       switch (req?.method) {
-        // direct_getTransactionReceipt must lock minimum block height to that
-        // of the retrieved transaction receipt, ensuring that subsequent
-        // requests will deliver results including transaction result
+        // getTransactionReceipt must lock minimum block height to that of the
+        // retrieved transaction receipt, ensuring that subsequent requests will
+        // deliver results including transaction result
+        case "eth_getTransactionReceipt":
         case "direct_getTransactionReceipt":
           if (
             "result" in res &&

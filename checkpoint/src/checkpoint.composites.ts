@@ -80,7 +80,9 @@ export function union<const T extends ReadonlyArray<Checkpoint<any>>>(
       }
     }
 
-    throw new Error(`${ctx} did not match any union type:\n  - ${errors.join("\n  - ")}`);
+    throw new Error(
+      `${ctx} did not match any union type:\n  - ${errors.map((it) => (it.startsWith("Direct.dev: ") ? it.substring(12) : it)).join("\n  - ")}`,
+    );
   };
 }
 

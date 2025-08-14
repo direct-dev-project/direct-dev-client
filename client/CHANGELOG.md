@@ -1,5 +1,16 @@
 # @direct.dev/client
 
+## 0.5.1
+
+### Patch Changes
+
+- 28f2549: fix: add config validation and automatic failover node inferrence
+- 36019eb: fix: ensure correctness of response IDs in all paths
+- Updated dependencies [28f2549]
+  - @direct.dev/checkpoint@0.5.1
+  - @direct.dev/shared@0.5.1
+  - @direct.dev/wire@0.5.1
+
 ## 0.5.0
 
 ### Minor Changes

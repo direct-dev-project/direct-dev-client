@@ -1,5 +1,14 @@
 # @direct.dev/ethers-v5
 
+## 0.5.1
+
+### Patch Changes
+
+- 28f2549: fix: add config validation and automatic failover node inferrence
+- Updated dependencies [28f2549]
+- Updated dependencies [36019eb]
+  - @direct.dev/client@0.5.1
+
 ## 0.5.0
 
 ### Minor Changes

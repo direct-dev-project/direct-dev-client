@@ -1,5 +1,15 @@
 # @direct.dev/wagmi
 
+## 0.5.1
+
+### Patch Changes
+
+- Updated dependencies [28f2549]
+- Updated dependencies [36019eb]
+  - @direct.dev/client@0.5.1
+  - @direct.dev/viem@0.5.1
+  - @direct.dev/shared@0.5.1
+
 ## 0.5.0
 
 ### Patch Changes

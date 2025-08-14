@@ -1,5 +1,12 @@
 # @direct.dev/checkpoint
 
+## 0.5.1
+
+### Patch Changes
+
+- 28f2549: fix: add config validation and automatic failover node inferrence
+  - @direct.dev/shared@0.5.1
+
 ## 0.5.0
 
 ### Minor Changes

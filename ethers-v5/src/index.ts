@@ -29,18 +29,10 @@ export default class DirectProvider extends StaticJsonRpcProvider {
    */
   #autoIncrementedId = 0;
 
-  constructor(
-    config: Omit<DirectRPCClientConfig, "failover"> & {
-      failover?: DirectRPCClientConfig["failover"];
-    },
-    network?: Networkish,
-  ) {
+  constructor(config: DirectRPCClientConfig, network?: Networkish) {
     super(undefined, network);
 
-    this.#directClient = makeDirectRPCClient({
-      ...config,
-      failover: config.failover ?? [defaultFailoverUrls[config.networkId]],
-    });
+    this.#directClient = makeDirectRPCClient(config);
   }
 
   /**
@@ -110,15 +102,3 @@ export default class DirectProvider extends StaticJsonRpcProvider {
     return super.getTransactionReceipt(transactionHash);
   }
 }
-
-/**
- * mapping of default failover node URLs
- */
-const defaultFailoverUrls: Record<SupportedNetworkId, string> = {
-  ethereum: "https://eth.merkle.io",
-  "ethereum-holesky": "https://ethereum-holesky-rpc.publicnode.com",
-  "ethereum-sepolia": "https://sepolia.drpc.org",
-
-  sonic: "https://rpc.soniclabs.com",
-  "sonic-blaze-testnet": "https://rpc.blaze.soniclabs.com",
-};

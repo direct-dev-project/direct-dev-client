@@ -1,5 +1,6 @@
 import {
   arr,
+  bool,
   checkpoint,
   date,
   literal,
@@ -15,8 +16,29 @@ import {
 import type { HashSetChecksum } from "@direct.dev/shared";
 import type { wire } from "@direct.dev/wire";
 
+import type { DirectRPCClientConfig } from "./_direct-rpc-client.js";
 import type { PersistedSyncState } from "./core.sync.js";
 import type { PersistedTelemetry } from "./core.telemetry.js";
+
+/**
+ * schema for validating provided configurations when instantiating clients
+ */
+export const configSchema = checkpoint<DirectRPCClientConfig>(
+  "config",
+  shape({
+    projectId: str,
+    projectToken: optional(str),
+    networkId: literal("ethereum-holesky", "ethereum-sepolia", "ethereum", "sonic-blaze-testnet", "sonic"),
+    failover: optional(arr(str, { minLength: 1 })),
+    baseUrl: optional(str),
+    preferredFormat: optional(literal("wire", "ndjson", "jsonrpc")),
+    logLevel: optional(literal("verbose", "debug", "info", "warn", "error")),
+    batchWindowMs: optional(num),
+    devMode: optional(bool),
+    disableSync: optional(bool),
+    networkInspect: optional(bool),
+  }),
+);
 
 /**
  * schema for validating untrusted JSON-RPC request objects

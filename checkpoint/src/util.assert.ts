@@ -4,6 +4,6 @@
  */
 export function assert(condition: boolean, msg: string): asserts condition {
   if (!condition) {
-    throw new Error(msg);
+    throw new Error(`Direct.dev: ${msg}`);
   }
 }

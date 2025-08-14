@@ -94,12 +94,6 @@ export class DirectRequestRouter {
 
     // prepare configurations for handling batches of requests
     this.#batchWindowMs = config.batchWindowMs ?? 25;
-
-    if (this.#config.providerNodes.length === 0) {
-      throw new Error(
-        "new DirectRequestRouter(): you must configure at least 1 fallback provider for fail-over handling",
-      );
-    }
   }
 
   /**
@@ -111,7 +105,7 @@ export class DirectRequestRouter {
   async fetch(req: MaybeArray<FetchInput>): Promise<MaybeArray<FetchOutput>>;
   async fetch(req: MaybeArray<FetchInput>): Promise<MaybeArray<FetchOutput>> {
     if (this.#isDestroyed) {
-      throw new Error("DirectRequestRouter.fetchOne(): instance destroyed");
+      throw new Error("DirectRequestRouter.fetch(): instance destroyed");
     }
 
     const startedAt = Date.now();
@@ -148,7 +142,24 @@ export class DirectRequestRouter {
         const output = await Promise.all(
           reqs.map(async (req) => {
             const [cacheKey, requestHash] = await this.#cacheManager.getCacheKey(req, blockHeight);
-            return this.#fetch(requestHash, cacheKey, req, blockHeight);
+            const response = await this.#fetch(requestHash, cacheKey, req, blockHeight);
+
+            return {
+              response: Promise.resolve(response.response).then((response) => ({
+                ...("result" in response ? { result: response.result } : { error: response.error }),
+
+                // add hardcoded jsonrpc: "2.0" property for data received from
+                // Direct.dev infrastructure, but allow native jsonrpc property
+                // to pass-through if data was fetched directly from providers
+                jsonrpc: "jsonrpc" in response ? response.jsonrpc : "2.0",
+
+                // re-wrap response ID identical to the incoming request; this
+                // is necessary because we frequently re-write IDs when doing
+                // RPC request batching to Direct.dev infrastructure and for
+                // data delivered through in-memory or inflight cache layers
+                id: req.id,
+              })),
+            };
           }),
         );
 

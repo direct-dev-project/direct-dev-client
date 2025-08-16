@@ -197,18 +197,29 @@ export class DirectRequestRouter {
       }
 
       const finalResponse = response && "then" in response ? await response : response;
-
-      // collect response time telemetry based on duration from recieving the
-      // request until response was received
       const responseTimeMs = Date.now() - startedAt;
 
-      this.#telemetryManager.collectResponseTime(responseTimeMs);
-      this.#logger.verbose("fetch", `response delivered in ${responseTimeMs.toLocaleString()}ms`, {
-        req,
-        res: Array.isArray(req) ? finalResponse : finalResponse?.[0],
-      });
+      //
+      // STEP: log operations
+      //
+      if (Array.isArray(req)) {
+        this.#logger.info("batch", `${req.length} requests served in ${responseTimeMs.toLocaleString()}ms`);
+      } else {
+        this.#logger.info(req.method, `served in ${responseTimeMs.toLocaleString()}ms`);
+      }
 
-      // track estimated bandwidth usage to perform this request
+      if (finalResponse) {
+        for (const res of finalResponse) {
+          this.#logger.verbose("fetch", `response served`, {
+            req: Array.isArray(req) ? req.find((it) => it.id === res.id) : req,
+            res,
+          });
+        }
+      }
+
+      //
+      // STEP: collect telemetry for subsequent delivery to Direct.dev backend
+      //
       const requestBody = estimateJsonRpcSize(req);
       const responseBody = estimateJsonRpcSize(finalResponse);
 
@@ -217,6 +228,7 @@ export class DirectRequestRouter {
         upload: requestBody + AVG_HTTP_REQUEST_HEADER_SIZE,
         download: responseBody * (1 - AVG_GZIP_COMPRESSION) + AVG_HTTP_RESPONSE_HEADER_SIZE,
       });
+      this.#telemetryManager.collectResponseTime(responseTimeMs);
     }
   }
 

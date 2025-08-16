@@ -1,5 +1,14 @@
 # @direct.dev/client
 
+## 0.5.2
+
+### Patch Changes
+
+- 0df0ed9: chore: log response times as info
+  - @direct.dev/checkpoint@0.5.2
+  - @direct.dev/shared@0.5.2
+  - @direct.dev/wire@0.5.2
+
 ## 0.5.1
 
 ### Patch Changes

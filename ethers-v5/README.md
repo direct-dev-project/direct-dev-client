@@ -29,11 +29,11 @@ An **ethers**-compatible provider that integrates with the [Direct.dev](https://
 ## Installation
 
 ```sh
-npm install @direct.dev/ethers-v5 ethers
+npm install @direct.dev/ethers-v5 ethers@5.x
 # or
-yarn add @direct.dev/ethers-v5 ethers
+yarn add @direct.dev/ethers-v5 ethers@5.x
 # or
-pnpm add @direct.dev/ethers-v5 ethers
+pnpm add @direct.dev/ethers-v5 ethers@5.x
 ```
 
 ## Usage
@@ -64,7 +64,7 @@ Join our [Discord community](https://discord.gg/directdotdev) for discussions an
 
 ## License
 
-🛡️ **License:** This software is provided under the [Direct.dev Terms and Conditions](./LICENSE.md).  
+🛡️ **License:** This software is provided under the [Direct.dev Terms and Conditions](./LICENSE.md).
 Use of this software requires agreement to those terms.
 
 For inquiries, contact [info@direct.dev](mailto:info@direct.dev).

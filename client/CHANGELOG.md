@@ -1,5 +1,14 @@
 # @direct.dev/client
 
+## 0.5.3
+
+### Patch Changes
+
+- b4a688f: fix: close sync stream after extended periods of inactivity
+  - @direct.dev/checkpoint@0.5.3
+  - @direct.dev/shared@0.5.3
+  - @direct.dev/wire@0.5.3
+
 ## 0.5.2
 
 ### Patch Changes

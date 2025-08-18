@@ -1,5 +1,11 @@
 # @direct.dev/checkpoint
 
+## 0.5.3
+
+### Patch Changes
+
+- @direct.dev/shared@0.5.3
+
 ## 0.5.2
 
 ### Patch Changes

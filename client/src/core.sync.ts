@@ -31,6 +31,12 @@ export type PersistedSyncState = {
 const ROLLING_STREAM_TIMEOUT_MS = 45_000;
 
 /**
+ * duration after which sync stream will be closed, if there has been no
+ * request activity.
+ */
+const INACTIVITY_TIMEOUT_MS = 10_000;
+
+/**
  * single-character op codes designating operations to be performed when
  * syncing local cache.
  */
@@ -116,13 +122,6 @@ export class DirectSyncManager {
   #isStopped = true;
 
   /**
-   * timestamp specifying when this sync manager was lasted used by external
-   * integrations; used to auto-pause synchronization in cases where data is
-   * never accessed by client.
-   */
-  #lastUsage = 0;
-
-  /**
    * reference to the currently active stream
    */
   #currStream: DirectSyncStream | undefined;
@@ -181,6 +180,12 @@ export class DirectSyncManager {
    * exponential backoff.
    */
   #restartTimeout: NodeJS.Timeout | number | undefined;
+
+  /**
+   * timeout used to auto-stop sync requests if there are no request activity
+   * for extended periods of time.
+   */
+  #inactiveTimeout: NodeJS.Timeout | number | undefined;
 
   /**
    * reference to the previously handled block height, so that patches can be
@@ -242,6 +247,11 @@ export class DirectSyncManager {
     }
 
     clearTimeout(this.#restartTimeout);
+    clearTimeout(this.#inactiveTimeout);
+
+    this.#inactiveTimeout = setTimeout(() => {
+      this.stop();
+    }, INACTIVITY_TIMEOUT_MS);
 
     if (!this.#isStopped || this.#backoffManager.shouldBackOff(this.#config.endpointUrl)) {
       return;
@@ -504,6 +514,7 @@ export class DirectSyncManager {
 
     clearTimeout(this.#rollTimeout);
     clearTimeout(this.#restartTimeout);
+    clearTimeout(this.#inactiveTimeout);
   }
 
   /**
@@ -893,13 +904,6 @@ export class DirectSyncManager {
     clearTimeout(this.#rollTimeout);
 
     this.#rollTimeout = setTimeout(() => {
-      if (this.#lastUsage < Date.now() - ROLLING_STREAM_TIMEOUT_MS / 2) {
-        // bail out early if there hasn't been made any attempts to access the
-        // sync manager in the last half of this stream's lifetime
-        this.stop();
-        return;
-      }
-
       this.#openStream();
     }, ROLLING_STREAM_TIMEOUT_MS);
   }
@@ -924,11 +928,6 @@ export class DirectSyncManager {
     if (this.#isDestroyed) {
       throw new Error("DirectSyncManager.waitForHead(): instance destroyed");
     }
-
-    // track timestamp for last external usage of the SyncManager (if it's not
-    // actively waited for, then we consider the connection stale and close any
-    // currently pending streams)
-    this.#lastUsage = Date.now();
 
     return this.#waitForHead;
   }

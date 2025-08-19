@@ -1,5 +1,16 @@
 # @direct.dev/client
 
+## 0.5.4
+
+### Patch Changes
+
+- b0f1de0: fix: analysis of request syncing eligibility
+- 6ade921: chore: rename telemetry endpoint
+- 9ec768f: fix: avoid throwing JSON.parse errors on faulty patches
+  - @direct.dev/checkpoint@0.5.4
+  - @direct.dev/shared@0.5.4
+  - @direct.dev/wire@0.5.4
+
 ## 0.5.3
 
 ### Patch Changes

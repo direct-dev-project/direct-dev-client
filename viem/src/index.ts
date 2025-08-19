@@ -8,9 +8,8 @@ import { holesky, mainnet, sepolia, sonic, sonicTestnet } from "viem/chains";
 import type { DirectRPCClientConfig } from "@direct.dev/client";
 import { makeDirectRPCClient } from "@direct.dev/client";
 
-import { sonicBlazeTestnet } from "./constants.chains.js";
-
-type Config = Omit<DirectRPCClientConfig, "networkId" | "failover"> & Partial<Pick<DirectRPCClientConfig, "failover">>;
+type DirectConfig = Omit<DirectRPCClientConfig, "networkId" | "failover"> &
+  Partial<Pick<DirectRPCClientConfig, "failover">>;
 
 /**
  * Create a Viem PublicClient, which wraps the DirectRPCClient and routes
@@ -19,11 +18,15 @@ type Config = Omit<DirectRPCClientConfig, "networkId" | "failover"> & Partial<Pi
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default function createDirectPublicClient<TChain extends Chain<any, any>>(
-  config: Config,
+  _directConfig: DirectConfig,
   chain: TChain,
+  _viemConfig?: Omit<PublicClientConfig, "key" | "name" | "chain" | "transport" | "batch" | "cacheTime">,
 ): PublicClient<Transport, TChain> {
-  const [clientConfig, directConfig] = buildViemConfig(config, chain);
-  const publicClient = createPublicClient(clientConfig);
+  const [clientConfig, directConfig] = buildViemConfig(_directConfig, chain);
+  const publicClient = createPublicClient({
+    ..._viemConfig,
+    ...clientConfig,
+  });
 
   return extendDirectClient(publicClient, clientConfig, directConfig);
 }
@@ -35,11 +38,15 @@ export default function createDirectPublicClient<TChain extends Chain<any, any>>
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createDirectClient<TChain extends Chain<any, any>>(
-  config: Config,
+  _directConfig: DirectConfig,
   chain: TChain,
+  _viemConfig?: Omit<ClientConfig, "key" | "name" | "chain" | "transport" | "batch" | "cacheTime">,
 ): Client<Transport, TChain> {
-  const [clientConfig, directConfig] = buildViemConfig(config, chain);
-  const client = createClient(clientConfig);
+  const [clientConfig, directConfig] = buildViemConfig(_directConfig, chain);
+  const client = createClient({
+    ..._viemConfig,
+    ...clientConfig,
+  });
 
   return extendDirectClient(client, clientConfig, directConfig);
 }
@@ -48,7 +55,7 @@ export function createDirectClient<TChain extends Chain<any, any>>(
  * internal helper to streamline client configuration amongst exported creators
  */
 export function buildViemConfig<TChain extends Chain>(
-  config: Config,
+  config: DirectConfig,
   chain: TChain,
 ): [PublicClientConfig<Transport, TChain>, DirectRPCClientConfig] {
   const directConfig = buildDirectConfig(config, chain);
@@ -59,6 +66,12 @@ export function buildViemConfig<TChain extends Chain>(
       name: `Direct.dev (${directConfig.networkId})`,
       chain,
       transport: () => createDirectViemTransport(directConfig),
+
+      // ensure that DirectRPCClient maintains batching and caching
+      batch: {
+        multicall: false,
+      },
+      cacheTime: 0,
     },
     directConfig,
   ];
@@ -68,10 +81,7 @@ export function buildViemConfig<TChain extends Chain>(
  * Build a DirectRPCClient object, automatically inferring network and failover
  * nodes from Viems chain object.
  */
-export function buildDirectConfig(config: Config, _chain: Chain): DirectRPCClientConfig {
-  // sonicTestnet doesn't actually exist, only sonicBlazeTestnet is valid
-  const chain = _chain.id !== sonicTestnet.id ? _chain : sonicBlazeTestnet;
-
+export function buildDirectConfig(config: DirectConfig, chain: Chain): DirectRPCClientConfig {
   const networkId = getNetworkIdFromChain(chain);
   const failover = config.failover ?? [...chain.rpcUrls.default.http];
 
@@ -220,8 +230,8 @@ function getNetworkIdFromChain(chain: Chain): SupportedNetworkId {
 
     case sonic.id:
       return "sonic";
-    case sonicBlazeTestnet.id:
-      return "sonic-blaze-testnet";
+    case sonicTestnet.id:
+      return "sonic-testnet";
   }
 
   throw new Error("getNetworkIdFromChain(): unable to map chain to supported network id (Direct.dev)");

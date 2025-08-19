@@ -1,5 +1,16 @@
 # @direct.dev/viem
 
+## 0.5.4
+
+### Patch Changes
+
+- 06ed66c: feat: allow custom client configurations
+- Updated dependencies [b0f1de0]
+- Updated dependencies [6ade921]
+- Updated dependencies [9ec768f]
+  - @direct.dev/client@0.5.4
+  - @direct.dev/shared@0.5.4
+
 ## 0.5.3
 
 ### Patch Changes

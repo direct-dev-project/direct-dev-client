@@ -28,7 +28,7 @@ export const configSchema = checkpoint<DirectRPCClientConfig>(
   shape({
     projectId: str,
     projectToken: optional(str),
-    networkId: literal("ethereum-holesky", "ethereum-sepolia", "ethereum", "sonic-blaze-testnet", "sonic"),
+    networkId: literal("ethereum-holesky", "ethereum-sepolia", "ethereum", "sonic-testnet", "sonic"),
     failover: optional(arr(str, { minLength: 1 })),
     baseUrl: optional(str),
     preferredFormat: optional(literal("wire", "ndjson", "jsonrpc")),

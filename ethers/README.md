@@ -43,12 +43,20 @@ pnpm add @direct.dev/ethers ethers
 import DirectProvider from "@direct.dev/ethers";
 
 // Initialize the Direct.dev provider
-const provider = new DirectProvider({
-  projectId: "your-project-id", // From the Direct.dev dashboard
-  projectToken: "************", // From the Direct.dev dashboard
-  networkId: "your-network-id", // e.g. "ethereum", "polygon"
-  failover: ["https://your-provider-endpoints.com/"],
-});
+const provider = new DirectProvider(
+  // Direct configurations
+  {
+    projectId: "your-project-id", // From the Direct.dev dashboard
+    projectToken: "************", // From the Direct.dev dashboard
+    networkId: "your-network-id", // e.g. "ethereum", "sonic"
+  },
+
+  // Ethers configurations (Optional)
+  {
+    polling: true,
+    pollingInterval: 1000,
+  }
+);
 
 // Example: Fetch the latest block number
 const blockNumber = await provider.getBlockNumber();
@@ -64,7 +72,7 @@ Join our [Discord community](https://discord.gg/directdotdev) for discussions an
 
 ## License
 
-🛡️ **License:** This software is provided under the [Direct.dev Terms and Conditions](./LICENSE.md).  
+🛡️ **License:** This software is provided under the [Direct.dev Terms and Conditions](./LICENSE.md).
 Use of this software requires agreement to those terms.
 
 For inquiries, contact [info@direct.dev](mailto:info@direct.dev).

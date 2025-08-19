@@ -5,6 +5,7 @@ import {
   inferRequestHashFromCacheKey,
   Logger,
   mayRPCRequestRevalidate,
+  mayRPCRequestSync,
   normalizeRPCMethod,
   readFromLocalStorage,
   writeToLocalStorage,
@@ -224,7 +225,7 @@ export class DirectTelemetryManager {
         tiedToBlockHeight: params.cacheKey !== requestHash,
         blockHeightParam: getBlockHeightParam(analyzeInput),
         mayRevalidate: mayRPCRequestRevalidate(analyzeInput),
-        maySync: mayRPCRequestRevalidate(analyzeInput),
+        maySync: mayRPCRequestSync(analyzeInput),
         requestMethod: params.request.method,
         requestHash,
       };

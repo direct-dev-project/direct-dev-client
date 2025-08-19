@@ -1,9 +1,17 @@
 // eslint-disable-next-line import-x/no-extraneous-dependencies
 import { getNumber, JsonRpcProvider, makeError } from "ethers";
-import type { JsonRpcPayload, JsonRpcResult, Networkish, TransactionReceipt, TransactionReceiptParams } from "ethers";
+import type {
+  JsonRpcApiProviderOptions,
+  JsonRpcPayload,
+  JsonRpcResult,
+  TransactionReceipt,
+  TransactionReceiptParams,
+} from "ethers";
 
 import { makeDirectRPCClient } from "@direct.dev/client";
 import type { DirectRPCClient, DirectRPCClientConfig } from "@direct.dev/client";
+
+import { networks } from "./constants.chains.js";
 
 /**
  * Ethers provider wrapping the DirectRPCClient, which routes requests through
@@ -17,9 +25,21 @@ export default class DirectProvider extends JsonRpcProvider {
    */
   readonly #directClient: DirectRPCClient;
 
-  constructor(config: DirectRPCClientConfig, network?: Networkish) {
-    super(undefined, network, { staticNetwork: true, batchStallTime: 0 });
-
+  constructor(
+    config: DirectRPCClientConfig,
+    options?: Omit<
+      JsonRpcApiProviderOptions,
+      "staticNetwork" | "batchStallTimeout" | "batchMaxSize" | "batchMaxCount" | "cacheTimeout"
+    >,
+  ) {
+    super(undefined, networks[config.networkId], {
+      ...options,
+      staticNetwork: true,
+      batchStallTime: 0,
+      batchMaxCount: undefined,
+      batchMaxSize: undefined,
+      cacheTimeout: -1,
+    });
     this.#directClient = makeDirectRPCClient(config);
   }
 

@@ -1,5 +1,14 @@
 # @direct.dev/web3
 
+## 0.5.4
+
+### Patch Changes
+
+- Updated dependencies [b0f1de0]
+- Updated dependencies [6ade921]
+- Updated dependencies [9ec768f]
+  - @direct.dev/client@0.5.4
+
 ## 0.5.3
 
 ### Patch Changes

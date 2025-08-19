@@ -182,7 +182,7 @@ export class DirectRPCClient {
       projectId: config.projectId,
       networkId: config.networkId,
       logLevel: config.logLevel ?? "info",
-      endpointUrl: this.endpointUrl + "/telemetry?" + new URLSearchParams({ sessionId }),
+      endpointUrl: this.endpointUrl + "/pulse?" + new URLSearchParams({ sessionId }),
       preferredFormat: config.preferredFormat,
     });
 

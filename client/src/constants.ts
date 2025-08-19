@@ -23,5 +23,5 @@ export const DEFAULT_FAILOVER: Record<SupportedNetworkId, string[]> = {
   "ethereum-sepolia": ["https://sepolia.drpc.org"],
 
   sonic: ["https://rpc.soniclabs.com"],
-  "sonic-blaze-testnet": ["https://rpc.blaze.soniclabs.com"],
+  "sonic-testnet": ["https://rpc.testnet.soniclabs.com"],
 };

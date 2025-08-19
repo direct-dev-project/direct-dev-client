@@ -45,11 +45,17 @@ import createPublicClient from "@direct.dev/viem";
 
 // Initialize the Direct.dev client
 const client = createPublicClient(
+  // Direct configurations
   {
     projectId: "your-project-id", // From the Direct.dev dashboard
     projectToken: "************", // From the Direct.dev dashboard
   },
   mainnet,
+
+  // Viem configurations (Optional)
+  {
+    pollingInterval: 1000
+  }
 );
 
 // Example: Fetch the latest block number
@@ -66,7 +72,7 @@ Join our [Discord community](https://discord.gg/directdotdev) for discussions an
 
 ## License
 
-🛡️ **License:** This software is provided under the [Direct.dev Terms and Conditions](./LICENSE.md).  
+🛡️ **License:** This software is provided under the [Direct.dev Terms and Conditions](./LICENSE.md).
 Use of this software requires agreement to those terms.
 
 For inquiries, contact [info@direct.dev](mailto:info@direct.dev).

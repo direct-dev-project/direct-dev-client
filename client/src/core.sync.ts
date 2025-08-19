@@ -859,10 +859,16 @@ export class DirectSyncManager {
       case syncCodes.defaultPatch: {
         const nextJson = applyPatch(prevJson, patchStr, 1);
 
-        return {
-          ...prevResponse,
-          result: JSON.parse(nextJson),
-        };
+        try {
+          return {
+            ...prevResponse,
+            result: JSON.parse(nextJson),
+          };
+        } catch {
+          // silently ignore JSON.parse errors; it means we've applied a faulty
+          // patch, it will be caught during checksum verification
+          return;
+        }
       }
 
       // block height agnostic patches need to be applied in a fashion which
@@ -877,10 +883,16 @@ export class DirectSyncManager {
           1,
         ).replaceAll(syncCodes.blockHeightPlaceholder, toBlockHeight);
 
-        return {
-          ...prevResponse,
-          result: JSON.parse(nextJson),
-        };
+        try {
+          return {
+            ...prevResponse,
+            result: JSON.parse(nextJson),
+          };
+        } catch {
+          // silently ignore JSON.parse errors; it means we've applied a faulty
+          // patch, it will be caught during checksum verification
+          return;
+        }
       }
 
       // basic replacement of block height only
@@ -888,10 +900,16 @@ export class DirectSyncManager {
         const fromBlockHeight = (prevSnapshot?.blockHeight ?? "").replace(BLOCK_HEIGHT_START_REGEX, "");
         const toBlockHeight = (blockHeight ?? "").replace(BLOCK_HEIGHT_START_REGEX, "");
 
-        return {
-          ...prevResponse,
-          result: JSON.parse(prevJson.replaceAll(fromBlockHeight, toBlockHeight)),
-        };
+        try {
+          return {
+            ...prevResponse,
+            result: JSON.parse(prevJson.replaceAll(fromBlockHeight, toBlockHeight)),
+          };
+        } catch {
+          // silently ignore JSON.parse errors; it means we've applied a faulty
+          // patch, it will be caught during checksum verification
+          return;
+        }
       }
     }
   }

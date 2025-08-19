@@ -1,5 +1,15 @@
 # @direct.dev/ethers-v5
 
+## 0.5.4
+
+### Patch Changes
+
+- 06ed66c: fix: automatically infer network from Direct config
+- Updated dependencies [b0f1de0]
+- Updated dependencies [6ade921]
+- Updated dependencies [9ec768f]
+  - @direct.dev/client@0.5.4
+
 ## 0.5.3
 
 ### Patch Changes

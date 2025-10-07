@@ -379,18 +379,26 @@ export class DirectTelemetryManager {
           "Content-Type": "application/octet-stream",
         },
         body: String.fromCharCode(WIRE_VERSION_ID) + wire.telemetry.encode(payload),
-      });
+      }).catch((err) => String(err));
 
-      if (!res.ok) {
+      if (typeof res === "string" || !res.ok) {
         // if we didn't manage to ingest backoff events, then re-insert events
         // into memory so they can be dispatched at a later time
         this.#backoffEvents.splice(0, 0, ...payload.backoffEvents);
 
-        this.#logger.debug("flushData", "unable to flush telemetry data", {
-          status: res.status,
-          statusTest: res.statusText,
-          body: await res.text(),
-        });
+        this.#logger.debug(
+          "flushData",
+          "unable to flush telemetry data",
+          typeof res === "string"
+            ? {
+                err: res,
+              }
+            : {
+                status: res.status,
+                statusTest: res.statusText,
+                body: await res.text(),
+              },
+        );
       }
     }
   }

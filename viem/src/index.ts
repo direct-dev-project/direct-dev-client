@@ -232,6 +232,8 @@ function getNetworkIdFromChain(chain: Chain): SupportedNetworkId {
       return "sonic";
     case sonicTestnet.id:
       return "sonic-testnet";
+    case 57_054: // = sonicBlazeTestnet.id -- not referenced directly, as it might not be available in peerDependency depending on installed version
+      return "sonic-blaze-testnet";
   }
 
   throw new Error("getNetworkIdFromChain(): unable to map chain to supported network id (Direct.dev)");

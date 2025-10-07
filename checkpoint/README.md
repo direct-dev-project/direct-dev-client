@@ -34,6 +34,12 @@ If `input.method` is `null`, the error will read:
 rpcRequest.method must be a string or a number
 ```
 
+## Design Rationale
+
+We built `@direct.dev/checkpoint` around the principle of doing only what the Direct.dev ecosystem actually needs. Most validation libraries aim to cover every possible case, but that breadth comes with complexity and runtime cost. By deliberately narrowing scope, we get a lean tool that makes schemas easy to declare, read, and keep in sync with surrounding logic.
+
+When data is malformed, errors are not just thrown but reported with context, so the source of the problem is immediately clear.
+
 ## License
 
 🛡️ **License:** This software is provided under the [Direct.dev Terms and Conditions](./LICENSE.md).

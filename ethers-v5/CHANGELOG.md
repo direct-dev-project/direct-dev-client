@@ -1,5 +1,11 @@
 # @direct.dev/ethers-v5
 
+## 0.5.5
+
+### Patch Changes
+
+- @direct.dev/client@0.6.0
+
 ## 0.5.4
 
 ### Patch Changes

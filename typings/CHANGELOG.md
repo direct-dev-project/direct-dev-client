@@ -1,5 +1,11 @@
 # @direct.dev/typings
 
+## 0.6.0
+
+### Minor Changes
+
+- 50199dd: feat: implement Pulse to collect OpenTelemetry data from backend
+
 ## 0.5.0
 
 ### Minor Changes

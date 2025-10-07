@@ -1,5 +1,11 @@
 import type { LogLevel } from "@direct.dev/shared";
-import { DirectBackoffManager, estimateJsonRpcSize, inferRequestHashFromCacheKey, Logger } from "@direct.dev/shared";
+import {
+  DirectBackoffManager,
+  estimateJsonRpcSize,
+  inferRequestHashFromCacheKey,
+  Logger,
+  LRUCache,
+} from "@direct.dev/shared";
 
 import { DirectRPCBatchManager } from "./batch._manager.js";
 import type { BatchConfig } from "./batch.core.js";
@@ -56,6 +62,13 @@ export class DirectRequestRouter {
    * create faux fetch requests.
    */
   #cacheHits: Array<{ req: DirectRPCRequest; res: DirectRPCResultResponse | DirectRPCErrorResponse }> = [];
+
+  /**
+   * caching of request count per request hash, used for inspection/debugging
+   * in order to allow checking how well an application is suited for Direct
+   * Syncing.
+   */
+  #requestDistribution = new LRUCache<DirectRequestHash, number>(1000);
 
   constructor(
     config: Config,
@@ -117,7 +130,7 @@ export class DirectRequestRouter {
       // in order to fully bypass Direct.dev infrastructure
       //
       if (this.#config.devMode) {
-        response = await this.#fetchFromProviders(Array.isArray(req) ? req : [req], undefined);
+        response = await this.#fetchFromFailover(Array.isArray(req) ? req : [req], undefined);
 
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         return Array.isArray(req) ? response : response[0]!;
@@ -143,6 +156,9 @@ export class DirectRequestRouter {
           reqs.map(async (req) => {
             const [cacheKey, requestHash] = await this.#cacheManager.getCacheKey(req, blockHeight);
             const response = await this.#fetch(requestHash, cacheKey, req, blockHeight);
+
+            // track request distribution
+            this.#requestDistribution.set(requestHash, (this.#requestDistribution.get(requestHash) ?? 0) + 1);
 
             return {
               response: Promise.resolve(response.response).then((response) => ({
@@ -388,7 +404,7 @@ export class DirectRequestRouter {
       // batched entries
       const responses =
         (await this.#fetchFromDirect(currBatch)) ??
-        (await this.#fetchFromProviders(requests.map((it) => it.requestBody)));
+        (await this.#fetchFromFailover(requests.map((it) => it.requestBody)));
 
       await this.#handleResponses(responses, (res) => {
         receivedResponses.add(+res.id);
@@ -417,7 +433,7 @@ export class DirectRequestRouter {
 
       // retry failed requests directly against provider nodes in case of
       // runtime exceptions in Direct.dev infrastructure
-      const responses = await this.#fetchFromProviders(failedRequests.map((it) => it.requestBody));
+      const responses = await this.#fetchFromFailover(failedRequests.map((it) => it.requestBody));
 
       await this.#handleResponses(responses, (res) => {
         receivedResponses.add(+res.id);
@@ -432,16 +448,18 @@ export class DirectRequestRouter {
           continue;
         }
 
-        this.#cacheManager.handleResponse(
-          {
-            id: req.requestBody.id,
-            error: {
-              code: 85002,
-              message: "failed to receive response (Direct.dev)",
+        if (!this.#isDestroyed) {
+          this.#cacheManager.handleResponse(
+            {
+              id: req.requestBody.id,
+              error: {
+                code: 85002,
+                message: "failed to receive response (Direct.dev)",
+              },
             },
-          },
-          req.requestKey,
-        );
+            req.requestKey,
+          );
+        }
       }
     }
   };
@@ -522,17 +540,19 @@ export class DirectRequestRouter {
         }
       }
 
-      // resolve any pending inflight promise
-      const responseHash = await this.#cacheManager.handleResponse(response, cacheKey);
+      if (!this.#isDestroyed) {
+        // resolve any pending inflight promise
+        const responseHash = await this.#cacheManager.handleResponse(response, cacheKey);
 
-      if ("result" in response && response.expiresAt) {
-        // cache request in-memory if it is applicable for re-use later
-        this.#cacheManager.mapRequestToResponse(
-          blockHeight,
-          inferRequestHashFromCacheKey(cacheKey),
-          responseHash,
-          response.expiresAt,
-        );
+        if ("result" in response && response.expiresAt) {
+          // cache request in-memory if it is applicable for re-use later
+          this.#cacheManager.mapRequestToResponse(
+            blockHeight,
+            inferRequestHashFromCacheKey(cacheKey),
+            responseHash,
+            response.expiresAt,
+          );
+        }
       }
     }
   }
@@ -582,7 +602,7 @@ export class DirectRequestRouter {
    * internal helper that performs fetching of responses for a chunk of
    * requests; also handles exponential node backoff and fail-over on requests
    */
-  async #fetchFromProviders(
+  async #fetchFromFailover(
     requests: DirectRPCRequest[],
     failoverMode = false,
   ): Promise<Array<DirectRPCResultResponse | DirectRPCErrorResponse>> {
@@ -643,7 +663,7 @@ export class DirectRequestRouter {
 
       // track used bandwidth
       if (!req.ok) {
-        throw new Error("#fetchChunkFromProviders: unknown server error occurred");
+        throw new Error("#fetchFromFailover: unknown server error occurred");
       }
 
       // track used bandwidth
@@ -664,31 +684,52 @@ export class DirectRequestRouter {
 
       return responses;
     } catch (err) {
-      //
-      // STEP: handle errors to configure exponential backoff of nodes and
-      // automatic failover routing
-      //
-      if (failoverMode) {
-        // if we're already operating in fail-over mode, then throw the error
-        // externally to break execution
-        throw err;
-      }
-
       // if we get here, something went wrong - bump exponential backoff if
       // this node is not already in backoff mode
       if (!this.#backoffManager.shouldBackOff(nodeUrl)) {
         const backOffMs = this.#backoffManager.handleFailure(nodeUrl);
 
-        this.#logger.debug("#fetchChunkFromProviders", "entering back-off mode", {
+        this.#logger.debug("#fetchFromFailover", "entering back-off mode", {
           endsAt: new Date(Date.now() + backOffMs),
           node: nodeUrl,
         });
       }
 
+      if (failoverMode || availableNodes.length === 1) {
+        // if we're already operating in fail-over mode, or there are no other
+        // nodes to attempt the request against, then throw the error externally
+        // to break execution
+        throw err;
+      }
+
       // retry the request, routing it through one of the other supplied
       // provider nodes
-      return this.#fetchFromProviders(requests, true);
+      return this.#fetchFromFailover(requests, true);
     }
+  }
+
+  /**
+   * inspect request distribution and return telemetry, to allow inspection of
+   * how an applications traffic patterns performs.
+   */
+  getDistribution() {
+    const requestCountsByHash = Array.from(this.#requestDistribution.values());
+    const repeatedRequestCountsByHash = requestCountsByHash.filter((it) => it > 1);
+    const totalRequestCount = requestCountsByHash.reduce((acc, it) => acc + it, 0);
+    const uniqueRequestCount = requestCountsByHash.length - repeatedRequestCountsByHash.length;
+
+    const medianRepeatFrequency = repeatedRequestCountsByHash
+      .sort((a, b) => a - b)
+      .at(Math.floor(repeatedRequestCountsByHash.length * 0.5));
+    const avgRepeatFrequency = (totalRequestCount - uniqueRequestCount) / repeatedRequestCountsByHash.length;
+
+    return {
+      requestHashCount: requestCountsByHash.length,
+      totalRequestCount,
+      uniqueRequestCount,
+      medianRepeatFrequency,
+      avgRepeatFrequency,
+    };
   }
 
   /**

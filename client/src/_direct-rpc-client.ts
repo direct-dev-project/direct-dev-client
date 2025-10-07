@@ -157,6 +157,19 @@ export class DirectRPCClient {
   constructor(rawConfig: DirectRPCClientConfig) {
     const config = configSchema(rawConfig);
 
+    // warn if one or more invalid config properties have been provided
+    const configKeys = Object.keys(config);
+    const rawConfigKeys = Object.keys(rawConfig);
+
+    if (configKeys.length !== rawConfigKeys.length) {
+      const invalidConfigKeys = rawConfigKeys.filter((it) => !configKeys.includes(it));
+
+      if (invalidConfigKeys.length > 0) {
+        // eslint-disable-next-line no-console
+        console.warn(`[direct.dev] invalid config props provided: ${invalidConfigKeys.join(", ")}`);
+      }
+    }
+
     // generate a persistent session ID for this project, so we can analyze
     // access patterns across networks in Direct.dev infrastructure
     const sessionIdKey = `sessionId:${config.projectId}`;
@@ -441,6 +454,13 @@ export class DirectRPCClient {
     this.#telemetryManager.persistCriticalTelemetry();
     this.#syncManager?.persistState();
   };
+
+  /**
+   * allow external access to request distribution patterns for inspection.
+   */
+  getRequestDistribution() {
+    return this.#requestRouter.getDistribution();
+  }
 
   /**
    * destroy all nested managers associated with this client, ensuring that

@@ -11,6 +11,10 @@ export const networks: Record<SupportedNetworkId, Networkish> = {
     name: "sonic",
     chainId: 146,
   },
+  "sonic-blaze-testnet": {
+    name: "sonic-blaze-testnet",
+    chainId: 57_054,
+  },
   "sonic-testnet": {
     name: "sonic-testnet",
     chainId: 64_165,

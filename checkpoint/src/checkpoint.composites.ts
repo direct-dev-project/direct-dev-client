@@ -1,7 +1,9 @@
 import { isRecord } from "@direct.dev/shared";
+import { pack, unpack, Wire } from "@direct.dev/wire";
 
 import type { Checkpoint } from "./typings.js";
 import { assert } from "./util.assert.js";
+import { makeCheckpoint } from "./util.make-checker.js";
 
 /**
  * makes a checkpoint, which validates the shape of a record
@@ -9,30 +11,56 @@ import { assert } from "./util.assert.js";
 export function shape<T extends Record<string, unknown>>(schema: {
   [K in keyof T]: Checkpoint<T[K]>;
 }): Checkpoint<T> {
-  const nested = Object.entries(schema);
+  const nested = Object.entries(schema) as Array<[string, Checkpoint<T[keyof T]>]>;
 
-  return (ctx, x) => {
-    assert(isRecord(x), `${ctx} must be a record`);
+  return makeCheckpoint(
+    (ctx, x) => {
+      assert(isRecord(x), `${ctx} must be a record`);
 
-    return nested.reduce(
-      (acc, [key, checkpoint]) => {
-        if (!Object.prototype.hasOwnProperty.call(x, key)) {
-          if (checkpoint[isOptional] === true) {
-            // if this is an optional value, and it doesn't exist on the input
-            // structure - then discard it on output structure as well
-            return acc;
+      return nested.reduce(
+        (acc, [key, checkpoint]) => {
+          if (!Object.prototype.hasOwnProperty.call(x, key)) {
+            if (isOptional in checkpoint && checkpoint[isOptional] === true) {
+              // if this is an optional value, and it doesn't exist on the input
+              // structure - then discard it on output structure as well
+              return acc;
+            }
+
+            throw new Error(`${ctx}.${key} is required`);
           }
 
-          throw new Error(`${ctx}.${key} is required`);
+          acc[key] = checkpoint(`${ctx}.${key}`, x[key]);
+
+          return acc;
+        },
+        {} as Record<string, unknown>,
+      ) as T;
+    },
+    {
+      encode: (ctx, x) => {
+        let result = "";
+
+        for (const [key, schema] of nested) {
+          result += schema.encode(`${ctx}.${key}`, x[key]);
         }
 
-        acc[key] = checkpoint(`${ctx}.${key}`, x[key]);
-
-        return acc;
+        return result;
       },
-      {} as Record<string, unknown>,
-    ) as T;
-  };
+
+      decode: (ctx, input, cursor) => {
+        const result: Partial<T> = {};
+
+        for (const [key, schema] of nested) {
+          const value = schema.decode(`${ctx}.${key}`, input, cursor);
+
+          (result as Record<string, unknown>)[key] = value[0];
+          cursor = value[1];
+        }
+
+        return [result as T, cursor];
+      },
+    },
+  );
 }
 
 /**
@@ -46,19 +74,26 @@ export function arr<T>(
     maxLength?: number;
   },
 ): Checkpoint<T[]> {
-  return (ctx, x) => {
-    assert(Array.isArray(x), `${ctx} must be an array`);
+  return makeCheckpoint(
+    (ctx, x) => {
+      assert(Array.isArray(x), `${ctx} must be an array`);
 
-    if (options?.minLength != null) {
-      assert(x.length >= options.minLength, `${ctx} must contain at least ${options.minLength} items`);
-    }
+      if (options?.minLength != null) {
+        assert(x.length >= options.minLength, `${ctx} must contain at least ${options.minLength} items`);
+      }
 
-    if (options?.maxLength != null) {
-      assert(x.length <= options.maxLength, `${ctx} must contain at most ${options.maxLength} items`);
-    }
+      if (options?.maxLength != null) {
+        assert(x.length <= options.maxLength, `${ctx} must contain at most ${options.maxLength} items`);
+      }
 
-    return x.map((val, i) => checkpoint(`${ctx}[${i}]`, val));
-  };
+      return x.map((val, i) => checkpoint(`${ctx}[${i}]`, val));
+    },
+    {
+      encode: (ctx, x) => pack.arr(x, (item) => checkpoint.encode(`${ctx}[]`, item)),
+      decode: (ctx, input, cursor) =>
+        unpack.arr(input, cursor, (cursor) => checkpoint.decode(`${ctx}[]`, input, cursor)),
+    },
+  );
 }
 
 /**
@@ -69,21 +104,31 @@ export function arr<T>(
 export function union<const T extends ReadonlyArray<Checkpoint<any>>>(
   ...checkpoints: T
 ): Checkpoint<ReturnType<T[number]>> {
-  return (ctx, x) => {
-    const errors: string[] = [];
+  return makeCheckpoint(
+    (ctx, x) => {
+      const errors: string[] = [];
 
-    for (const cp of checkpoints) {
-      try {
-        return cp(ctx, x);
-      } catch (err) {
-        errors.push((err as Error).message);
+      for (const cp of checkpoints) {
+        try {
+          return cp(ctx, x);
+        } catch (err) {
+          errors.push((err as Error).message);
+        }
       }
-    }
 
-    throw new Error(
-      `${ctx} did not match any union type:\n  - ${errors.map((it) => (it.startsWith("Direct.dev: ") ? it.substring(12) : it)).join("\n  - ")}`,
-    );
-  };
+      throw new Error(
+        `${ctx} did not match any union type:\n  - ${errors.map((it) => (it.startsWith("Direct.dev: ") ? it.substring(12) : it)).join("\n  - ")}`,
+      );
+    },
+    {
+      encode: () => {
+        throw new Error("union.encode(): wire doesn't support unions");
+      },
+      decode: () => {
+        throw new Error("union.decode(): wire doesn't support unions");
+      },
+    },
+  );
 }
 
 /**
@@ -91,14 +136,49 @@ export function union<const T extends ReadonlyArray<Checkpoint<any>>>(
  * runs the provided checkpoint on real values.
  */
 export function optional<T>(checkpoint: Checkpoint<T>): Checkpoint<T | null | undefined> {
-  return Object.assign(
-    (ctx: string, x: unknown) => {
-      if (x == null) {
-        return x;
+  const wire = new Wire<T | null | undefined, [ctx: string]>(
+    {
+      null: {
+        id: 1,
+        encode: () => "",
+        decode: (input, cursor) => [null, cursor],
+      },
+
+      undefined: {
+        id: 2,
+        encode: () => "",
+        decode: (input, cursor) => [undefined, cursor],
+      },
+
+      defined: {
+        id: 3,
+        encode: (input, extraArgs) => checkpoint.encode(extraArgs[0], input),
+        decode: (input, cursor) => checkpoint.decode("", input, cursor),
+      },
+    },
+    (input) => {
+      if (input == null) {
+        return input === null ? "null" : "undefined";
       }
 
-      return checkpoint(ctx, x);
+      return "defined";
     },
+  );
+
+  return Object.assign(
+    makeCheckpoint(
+      (ctx: string, x: unknown) => {
+        if (x == null) {
+          return x;
+        }
+
+        return checkpoint(ctx, x);
+      },
+      {
+        encode: (ctx, x) => wire.encode(x, ctx),
+        decode: (ctx, input, cursor) => wire.decode(input, cursor),
+      },
+    ),
     { [isOptional]: true },
   );
 }

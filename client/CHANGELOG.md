@@ -1,5 +1,14 @@
 # @direct.dev/client
 
+## 0.6.0
+
+### Patch Changes
+
+- Updated dependencies [50199dd]
+  - @direct.dev/checkpoint@0.6.0
+  - @direct.dev/shared@0.6.0
+  - @direct.dev/wire@0.6.0
+
 ## 0.5.4
 
 ### Patch Changes

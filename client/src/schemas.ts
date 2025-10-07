@@ -1,18 +1,4 @@
-import {
-  arr,
-  bool,
-  checkpoint,
-  date,
-  literal,
-  num,
-  optional,
-  shape,
-  str,
-  strOrNum,
-  typedStr,
-  union,
-  unknown,
-} from "@direct.dev/checkpoint";
+import { checkpoint, check } from "@direct.dev/checkpoint";
 import type { HashSetChecksum } from "@direct.dev/shared";
 import type { wire } from "@direct.dev/wire";
 
@@ -25,18 +11,25 @@ import type { PersistedTelemetry } from "./core.telemetry.js";
  */
 export const configSchema = checkpoint<DirectRPCClientConfig>(
   "config",
-  shape({
-    projectId: str,
-    projectToken: optional(str),
-    networkId: literal("ethereum-holesky", "ethereum-sepolia", "ethereum", "sonic-testnet", "sonic"),
-    failover: optional(arr(str, { minLength: 1 })),
-    baseUrl: optional(str),
-    preferredFormat: optional(literal("wire", "ndjson", "jsonrpc")),
-    logLevel: optional(literal("verbose", "debug", "info", "warn", "error")),
-    batchWindowMs: optional(num),
-    devMode: optional(bool),
-    disableSync: optional(bool),
-    networkInspect: optional(bool),
+  check.shape({
+    projectId: check.str,
+    projectToken: check.optional(check.str),
+    networkId: check.literal(
+      "ethereum-holesky",
+      "ethereum-sepolia",
+      "ethereum",
+      "sonic-blaze-testnet",
+      "sonic-testnet",
+      "sonic",
+    ),
+    failover: check.optional(check.arr(check.str, { minLength: 1 })),
+    baseUrl: check.optional(check.str),
+    preferredFormat: check.optional(check.literal("wire", "ndjson", "jsonrpc")),
+    logLevel: check.optional(check.literal("verbose", "debug", "info", "warn", "error")),
+    batchWindowMs: check.optional(check.num),
+    devMode: check.optional(check.bool),
+    disableSync: check.optional(check.bool),
+    networkInspect: check.optional(check.bool),
   }),
 );
 
@@ -45,26 +38,26 @@ export const configSchema = checkpoint<DirectRPCClientConfig>(
  */
 export const rpcRequestSchema = checkpoint<DirectRPCRequest & { jsonrpc: string }>(
   "rpcRequest",
-  shape({
-    id: strOrNum,
-    method: str,
-    jsonrpc: str,
-    params: optional(unknown),
+  check.shape({
+    id: check.strOrNum,
+    method: check.str,
+    jsonrpc: check.str,
+    params: check.optional(check.unknown),
   }),
 );
 
-const rpcResultResponse = shape({
-  id: strOrNum,
-  result: unknown,
-  expiresAt: optional(date),
+const rpcResultResponse = check.shape({
+  id: check.strOrNum,
+  result: check.unknown,
+  expiresAt: check.optional(check.date),
 });
 
-const rpcErrorResponse = shape({
-  id: strOrNum,
-  error: shape({
-    code: num,
-    message: str,
-    data: optional(unknown),
+const rpcErrorResponse = check.shape({
+  id: check.strOrNum,
+  error: check.shape({
+    code: check.num,
+    message: check.str,
+    data: check.optional(check.unknown),
   }),
 });
 
@@ -73,7 +66,7 @@ const rpcErrorResponse = shape({
  */
 export const rpcResponseSchema = checkpoint<DirectRPCResultResponse | DirectRPCErrorResponse>(
   "rpcResponse",
-  union(rpcResultResponse, rpcErrorResponse),
+  check.union(rpcResultResponse, rpcErrorResponse),
 );
 
 /**
@@ -82,9 +75,9 @@ export const rpcResponseSchema = checkpoint<DirectRPCResultResponse | DirectRPCE
  */
 export const rpcHeadSchema = checkpoint<DirectRPCHead>(
   "rpcHead",
-  shape({
-    blockHeight: optional(typedStr<RPCBlockHeight>()),
-    blockHeightExpiresAt: optional(date),
+  check.shape({
+    blockHeight: check.optional(check.typedStr<RPCBlockHeight>()),
+    blockHeightExpiresAt: check.optional(check.date),
   }),
 );
 
@@ -94,29 +87,29 @@ export const rpcHeadSchema = checkpoint<DirectRPCHead>(
  */
 export const syncHeadSchema = checkpoint<wire.SyncHead>(
   "syncHead",
-  shape({
-    blockHeight: optional(typedStr<RPCBlockHeight>()),
-    clock: optional(
-      shape({
-        t2: date,
-        t3: date,
+  check.shape({
+    blockHeight: check.optional(check.typedStr<RPCBlockHeight>()),
+    clock: check.optional(
+      check.shape({
+        t2: check.date,
+        t3: check.date,
       }),
     ),
-    pendingBlockHeight: optional(
-      shape({
-        blockHeight: typedStr<RPCBlockHeight>(),
-        propagatesAt: date,
+    pendingBlockHeight: check.optional(
+      check.shape({
+        blockHeight: check.typedStr<RPCBlockHeight>(),
+        propagatesAt: check.date,
       }),
     ),
-    primer: optional(
-      shape({
-        syncSet: arr(typedStr<DirectRequestHash>()),
-        revalidateSet: arr(typedStr<DirectRequestHash>()),
-        requestToResponseMap: arr(
-          shape({
-            requestHash: typedStr<DirectRequestHash>(),
-            responseHash: typedStr<DirectResponseHash>(),
-            expiresAt: date,
+    primer: check.optional(
+      check.shape({
+        syncSet: check.arr(check.typedStr<DirectRequestHash>()),
+        revalidateSet: check.arr(check.typedStr<DirectRequestHash>()),
+        requestToResponseMap: check.arr(
+          check.shape({
+            requestHash: check.typedStr<DirectRequestHash>(),
+            responseHash: check.typedStr<DirectResponseHash>(),
+            expiresAt: check.date,
           }),
         ),
       }),
@@ -130,64 +123,64 @@ export const syncHeadSchema = checkpoint<wire.SyncHead>(
  */
 export const syncEventSchema = checkpoint<wire.SyncEventStructure>(
   "syncEvent",
-  union(
-    shape({
-      event: literal("ping"),
-      data: shape({
-        blockHeight: typedStr<RPCBlockHeight>(),
-        expiresAt: date,
+  check.union(
+    check.shape({
+      event: check.literal("ping"),
+      data: check.shape({
+        blockHeight: check.typedStr<RPCBlockHeight>(),
+        expiresAt: check.date,
       }),
     }),
-    shape({
-      event: literal("block-height.change"),
-      data: shape({
-        blockHeight: typedStr<RPCBlockHeight>(),
-        propagatesAt: date,
+    check.shape({
+      event: check.literal("block-height.change"),
+      data: check.shape({
+        blockHeight: check.typedStr<RPCBlockHeight>(),
+        propagatesAt: check.date,
       }),
     }),
-    shape({
-      event: literal("block-height.promote"),
-      data: shape({
-        blockHeight: typedStr<RPCBlockHeight>(),
+    check.shape({
+      event: check.literal("block-height.promote"),
+      data: check.shape({
+        blockHeight: check.typedStr<RPCBlockHeight>(),
       }),
     }),
-    shape({
-      event: literal("cache.delta"),
-      data: shape({
-        syncSet: shape({
-          checksum: typedStr<HashSetChecksum>(),
-          added: arr(typedStr<DirectRequestHash>()),
-          removed: arr(typedStr<DirectRequestHash>()),
+    check.shape({
+      event: check.literal("cache.delta"),
+      data: check.shape({
+        syncSet: check.shape({
+          checksum: check.typedStr<HashSetChecksum>(),
+          added: check.arr(check.typedStr<DirectRequestHash>()),
+          removed: check.arr(check.typedStr<DirectRequestHash>()),
         }),
-        revalidateSet: shape({
-          checksum: typedStr<HashSetChecksum>(),
-          added: arr(typedStr<DirectRequestHash>()),
-          removed: arr(typedStr<DirectRequestHash>()),
+        revalidateSet: check.shape({
+          checksum: check.typedStr<HashSetChecksum>(),
+          added: check.arr(check.typedStr<DirectRequestHash>()),
+          removed: check.arr(check.typedStr<DirectRequestHash>()),
         }),
       }),
     }),
-    shape({
-      event: literal("cache.continuation"),
-      data: shape({
-        checksum: typedStr<HashSetChecksum>(),
-        unchanged: arr(
-          shape({
-            requestIndex: num,
-            expiresAt: date,
+    check.shape({
+      event: check.literal("cache.continuation"),
+      data: check.shape({
+        checksum: check.typedStr<HashSetChecksum>(),
+        unchanged: check.arr(
+          check.shape({
+            requestIndex: check.num,
+            expiresAt: check.date,
           }),
         ),
-        patches: arr(
-          shape({
-            requestIndex: num,
-            patchStr: str,
-            expiresAt: date,
+        patches: check.arr(
+          check.shape({
+            requestIndex: check.num,
+            patchStr: check.str,
+            expiresAt: check.date,
           }),
         ),
-        replacements: arr(
-          shape({
-            requestIndex: num,
+        replacements: check.arr(
+          check.shape({
+            requestIndex: check.num,
             response: rpcResultResponse,
-            expiresAt: date,
+            expiresAt: check.date,
           }),
         ),
       }),
@@ -201,14 +194,14 @@ export const syncEventSchema = checkpoint<wire.SyncEventStructure>(
  */
 export const persistedTelemetrySchema = checkpoint<PersistedTelemetry>(
   "persistedTelemetry",
-  shape({
-    backoffEvents: arr(
-      shape({
-        source: literal("direct-rpc", "direct-sync", "failover"),
-        contextId: str,
-        failureCount: num,
-        registerredAt: date,
-        durationMs: num,
+  check.shape({
+    backoffEvents: check.arr(
+      check.shape({
+        source: check.literal("direct-rpc", "direct-sync", "failover"),
+        contextId: check.str,
+        failureCount: check.num,
+        registerredAt: check.date,
+        durationMs: check.num,
       }),
     ),
   }),
@@ -220,10 +213,10 @@ export const persistedTelemetrySchema = checkpoint<PersistedTelemetry>(
  */
 export const persistedSyncStateSchema = checkpoint<PersistedSyncState>(
   "persistedSyncState",
-  shape({
-    hashSet: shape({
-      items: arr(typedStr<DirectRequestHash>()),
-      checksum: typedStr<HashSetChecksum>(),
+  check.shape({
+    hashSet: check.shape({
+      items: check.arr(check.typedStr<DirectRequestHash>()),
+      checksum: check.typedStr<HashSetChecksum>(),
     }),
   }),
 );

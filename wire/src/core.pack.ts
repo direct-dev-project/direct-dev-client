@@ -700,7 +700,7 @@ export const unpack = {
  * tiny utility to build packers for encoding/decoding enumerations with
  * single-byte encodings.
  */
-export function makeEnumPacker<T extends string | null | undefined | number>(
+export function makeEnumPacker<T extends string | number | boolean | null | undefined>(
   values: T[],
 ): {
   encode: (input: T) => string;

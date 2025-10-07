@@ -26,6 +26,13 @@ export class LRUCache<K, V> {
   }
 
   /**
+   * gets current size of the cache.
+   */
+  get size(): number {
+    return this.#cache.size;
+  }
+
+  /**
    * gets an entry from the cache, marking it as recently used
    */
   get(key: K): V | undefined {

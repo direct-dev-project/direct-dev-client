@@ -272,9 +272,9 @@ export abstract class DirectRPCBatch {
       this.#requests.close(null);
 
       // abort request if we do not get a response within defined threshold
-      const abortTimeout = setTimeout(() => {
+      let abortTimeout = setTimeout(() => {
         this.#abortController.abort();
-      }, 500);
+      }, 1500);
 
       const res = await this.fetch();
       const uploadSizeInBytes = this.#uploadSizeInBytes;
@@ -293,6 +293,14 @@ export abstract class DirectRPCBatch {
 
         return undefined;
       }
+
+      // after having received initial response, re-schedule abortion to allow
+      // up to 500ms for server to indicate liveness
+      clearTimeout(abortTimeout);
+
+      abortTimeout = setTimeout(() => {
+        this.#abortController.abort();
+      }, 500);
 
       switch (this.config.preferredFormat) {
         case "jsonrpc":

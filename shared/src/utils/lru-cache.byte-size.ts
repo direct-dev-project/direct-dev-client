@@ -28,7 +28,7 @@ export class LRUByteSizeCache<K, V> {
   /**
    * specifies the current estimated size of the cache
    */
-  #estimatedByteSize = 0;
+  #estimatedSizeInBytes = 0;
 
   /**
    * reference to the onInsert callback (if given), to be triggered whenever
@@ -66,8 +66,15 @@ export class LRUByteSizeCache<K, V> {
   /**
    * returns the currently estimated size of the cache.
    */
-  get estimatedSize(): number {
-    return this.#estimatedByteSize;
+  get estimatedSizeInBytes(): number {
+    return this.#estimatedSizeInBytes;
+  }
+
+  /**
+   * returns the number of entries currently held within the cache.
+   */
+  get size(): number {
+    return this.#cache.size;
   }
 
   /**
@@ -101,18 +108,18 @@ export class LRUByteSizeCache<K, V> {
     }
 
     this.#cache.set(key, { value, estimatedByteSize });
-    this.#estimatedByteSize += estimatedByteSize;
+    this.#estimatedSizeInBytes += estimatedByteSize;
 
     // auto-evict oldest entries until cache size is within the configured
     // threshold
-    while (this.#estimatedByteSize > this.#maxByteSize && this.#cache.size > 1) {
+    while (this.#estimatedSizeInBytes > this.#maxByteSize && this.#cache.size > 1) {
       // grab the oldest inserted entry within the cache (relying on insertion
       // order in the Map we're using behind the scenes)
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const [oldestKey, oldestValue] = this.#cache.entries().next().value!;
 
       this.#cache.delete(oldestKey);
-      this.#estimatedByteSize -= oldestValue.estimatedByteSize;
+      this.#estimatedSizeInBytes -= oldestValue.estimatedByteSize;
 
       this.#onEvict(oldestKey);
     }
@@ -133,7 +140,7 @@ export class LRUByteSizeCache<K, V> {
 
     if (value !== undefined) {
       this.#cache.delete(key);
-      this.#estimatedByteSize -= value.estimatedByteSize;
+      this.#estimatedSizeInBytes -= value.estimatedByteSize;
 
       this.#onEvict(key);
     }
@@ -148,7 +155,7 @@ export class LRUByteSizeCache<K, V> {
     });
 
     this.#cache.clear();
-    this.#estimatedByteSize = 0;
+    this.#estimatedSizeInBytes = 0;
   }
 
   /**

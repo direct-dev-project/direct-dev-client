@@ -24,4 +24,5 @@ export const DEFAULT_FAILOVER: Record<SupportedNetworkId, string[]> = {
 
   sonic: ["https://rpc.soniclabs.com"],
   "sonic-testnet": ["https://rpc.testnet.soniclabs.com"],
+  "sonic-blaze-testnet": ["https://rpc.blaze.soniclabs.com"],
 };

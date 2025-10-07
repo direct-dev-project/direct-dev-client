@@ -1,5 +1,11 @@
 # @direct.dev/web3
 
+## 0.6.0
+
+### Patch Changes
+
+- @direct.dev/client@0.6.0
+
 ## 0.5.4
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@direct.dev/checkpoint",
-  "version": "0.5.4",
+  "version": "0.6.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/direct-dev-project/direct-dev-client.git"
@@ -31,7 +31,8 @@
     "prepublishOnly": "rm -rf lib/ && pnpm run build && pnpm run build:typescript"
   },
   "dependencies": {
-    "@direct.dev/shared": "workspace:*"
+    "@direct.dev/shared": "workspace:*",
+    "@direct.dev/wire": "workspace:*"
   },
   "devDependencies": {
     "@direct.dev/tooling-eslint-config": "workspace:*",

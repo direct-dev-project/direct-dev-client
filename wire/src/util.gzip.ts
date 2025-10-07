@@ -7,7 +7,7 @@ export async function gzip(input: Uint8Array): Promise<Uint8Array> {
 
   // send the raw input through the compression writer
   const writer = cs.writable.getWriter();
-  writer.write(input);
+  writer.write(input as Uint8Array<ArrayBuffer>);
   writer.close();
 
   // read the compressed output into chunks of output data
@@ -43,7 +43,7 @@ export async function gunzip(input: Uint8Array): Promise<Uint8Array> {
 
   // send the raw input through the compression writer
   const writer = cs.writable.getWriter();
-  writer.write(input);
+  writer.write(input as Uint8Array<ArrayBuffer>);
   writer.close();
 
   // read the compressed output into chunks of output data
@@ -74,14 +74,14 @@ export async function gunzip(input: Uint8Array): Promise<Uint8Array> {
  * internal helper to perform streamed gzip compression
  */
 export function gzipStream(input: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
-  return input.pipeThrough(new CompressionStream("gzip"));
+  return (input as ReadableStream<Uint8Array<ArrayBuffer>>).pipeThrough(new CompressionStream("gzip"));
 }
 
 /**
  * internal helper to perform streamed gzip decompression
  */
 export function gunzipStream(input: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
-  return input.pipeThrough(new DecompressionStream("gzip"));
+  return (input as ReadableStream<Uint8Array<ArrayBuffer>>).pipeThrough(new DecompressionStream("gzip"));
 }
 
 /**

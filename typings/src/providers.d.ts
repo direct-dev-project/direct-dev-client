@@ -19,7 +19,13 @@ type SupportedChainId = "ethereum" | "sonic";
  * Definition of networks supported by Direct.dev (internally maps to specific
  * provider nodes)
  */
-type SupportedNetworkId = "ethereum-holesky" | "ethereum-sepolia" | "ethereum" | "sonic-testnet" | "sonic";
+type SupportedNetworkId =
+  | "ethereum-holesky"
+  | "ethereum-sepolia"
+  | "ethereum"
+  | "sonic-blaze-testnet"
+  | "sonic-testnet"
+  | "sonic";
 
 /**
  * Definition of upstream request routing tags; used for effecient and correct

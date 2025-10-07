@@ -24,15 +24,19 @@
 export function makeAsyncQueue() {
   let eventQueue: Promise<unknown> | undefined;
 
-  return async <T>(cb: () => Promise<T> | T, errCb: (err: unknown) => T): Promise<T> => {
-    const result = (eventQueue = Promise.resolve(eventQueue)
+  return async <T>(cb: () => Promise<T> | T, errCb?: (err: unknown) => T): Promise<T> => {
+    const result = Promise.resolve(eventQueue)
       .catch(() => {
         // ignore errors in queue, errCb for previous event will have been
         // called already - if that callback also failed, continue operations
         // to avoid interruptions
       })
       .then(cb)
-      .catch(errCb));
+      .catch(errCb);
+
+    eventQueue = result.catch(() => {
+      // silently suppress error, so it doesn't affect next run
+    });
 
     return await result;
   };

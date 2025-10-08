@@ -1,5 +1,12 @@
 # @direct.dev/web3
 
+## 0.6.1
+
+### Patch Changes
+
+- Updated dependencies [16ec9b3]
+  - @direct.dev/client@0.6.1
+
 ## 0.6.0
 
 ### Patch Changes

@@ -1,6 +1,6 @@
-import { sha256 } from "./hashing.sha256.js";
+import { hash } from "./hashing.hash.js";
 
-export type HashSetChecksum = Sha256String & { readonly __subbrand: unique symbol };
+export type HashSetChecksum = HashStr & { readonly __subbrand: unique symbol };
 
 export type HashSetDelta<T extends string> = {
   added: T[];
@@ -99,7 +99,7 @@ export class HashSet<T extends string> {
     // apply the new set as the latest version
     this.#asArray = Array.from(nextValue).sort();
     this.#asMap = new Map(this.#asArray.map((hash, index) => [hash, index] as const));
-    this.#checksum = (await sha256(this.#asArray.join(","))) as HashSetChecksum;
+    this.#checksum = (await hash(this.#asArray.join(","))) as HashSetChecksum;
 
     // calculate delta between previous and new version
     const added: T[] = [];
@@ -143,7 +143,7 @@ export class HashSet<T extends string> {
     // verify checksum, and bail out if invalid
     const nextArr = Array.from(nextSet).sort();
     const nextMap = new Map(nextArr.map((hash, index) => [hash, index] as const));
-    const checksum = (await sha256(nextArr.join(","))) as HashSetChecksum;
+    const checksum = (await hash(nextArr.join(","))) as HashSetChecksum;
 
     if (checksum !== delta.checksum) {
       return false;

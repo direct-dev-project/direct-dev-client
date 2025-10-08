@@ -1,5 +1,13 @@
 # @direct.dev/checkpoint
 
+## 0.6.1
+
+### Patch Changes
+
+- Updated dependencies [16ec9b3]
+  - @direct.dev/shared@0.6.1
+  - @direct.dev/wire@0.6.1
+
 ## 0.6.0
 
 ### Minor Changes

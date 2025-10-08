@@ -5,7 +5,7 @@ import {
   readFromLocalStorage,
   writeToLocalStorage,
   makeDeferred,
-  sha256,
+  hash,
   makeAsyncQueue,
   DirectBackoffManager,
   sortObject,
@@ -371,8 +371,8 @@ export class DirectSyncManager {
     // once the stream is opened, subscribe listeners to track events
     // received on next + current stream, and wait until the streams
     // intersect to ensure no events are dropped
-    const currStreamEvents = new Map<Sha256String, wire.SyncEventStructure>();
-    const nextStreamEvents = new Map<Sha256String, wire.SyncEventStructure>();
+    const currStreamEvents = new Map<HashStr, wire.SyncEventStructure>();
+    const nextStreamEvents = new Map<HashStr, wire.SyncEventStructure>();
 
     // once intersection has been detected, allow events on next stream to be
     // emitted immediately while waiting for regular event listener to be bound
@@ -391,7 +391,7 @@ export class DirectSyncManager {
               return;
             }
 
-            const eventHash = await sha256(sortObject(evt));
+            const eventHash = await hash(sortObject(evt));
             currStreamEvents.set(eventHash, evt);
 
             if (nextStreamEvents.has(eventHash)) {
@@ -437,7 +437,7 @@ export class DirectSyncManager {
       nextStream.on("event", (evt) => {
         eventQueue(
           async () => {
-            const eventHash = await sha256(sortObject(evt));
+            const eventHash = await hash(sortObject(evt));
             nextStreamEvents.set(eventHash, evt);
 
             if (currStreamEvents.has(eventHash)) {
@@ -782,9 +782,7 @@ export class DirectSyncManager {
               .sort()
               .join(",");
 
-            const checksum = await sha256(
-              this.#syncHashSet.getChecksum() + blockHeight + requestHashes + responseHashes,
-            );
+            const checksum = await hash(this.#syncHashSet.getChecksum() + blockHeight + requestHashes + responseHashes);
 
             if (checksum !== evt.data.checksum) {
               // in case of output mismatches, then break sync connection and

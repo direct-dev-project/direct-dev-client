@@ -56,9 +56,9 @@ export const pack = {
     return prefix + input;
   },
 
-  sha256(input: Sha256String): string {
-    // hashes are fixed-length at 37 characters, as a result of the base-128
-    // encoded 256 bit hash; add as-is
+  hash(input: HashStr): string {
+    // hashes are pre-encoded in a fixated layout with 15 characters + an LEB-64
+    // encoded string length postfix; add the string as-is
     return input;
   },
 
@@ -341,8 +341,19 @@ export const unpack = {
     return [input.slice(cursor, cursor + len), cursor + len];
   },
 
-  sha256(input: string, cursor: number): [Sha256String, number] {
-    return [input.slice(cursor, cursor + 37) as Sha256String, cursor + 37];
+  hash(input: string, cursor: number): [HashStr, number] {
+    // hashes include 15 fixed-length bytes for encoding hashes, followed by an
+    // LEB-64 encoded length postfix
+    let endCursor = cursor + 15;
+
+    // @DECODE LEB-64
+    let byte = input.charCodeAt(endCursor);
+
+    while (byte & 0b01000000) {
+      byte = input.charCodeAt(++endCursor);
+    }
+
+    return [input.slice(cursor, endCursor + 1) as HashStr, endCursor + 1];
   },
 
   nullableStr(input: string, cursor: number): [string | null | undefined, number] {

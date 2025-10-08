@@ -148,13 +148,13 @@ const cacheHitWire = new Wire<CacheHitEntry>({
       Array.from(input.perBlockMetrics.entries()),
       ([blockHeight, metrics]) =>
         pack.nullableStr(blockHeight) +
-        pack.sha256(metrics.responseHash) +
+        pack.hash(metrics.responseHash) +
         pack.int(metrics.requestSizeInBytes) +
         pack.int(metrics.responseSizeInBytes) +
         pack.arr(metrics.timestamps, (item) => pack.date(item)),
     ) +
     pack.str(input.requestMethod) +
-    pack.sha256(input.requestHash) +
+    pack.hash(input.requestHash) +
     pack.bool(input.tiedToBlockHeight) +
     pack.nullableStr(input.blockHeightParam) +
     pack.bool(input.mayRevalidate) +
@@ -162,7 +162,7 @@ const cacheHitWire = new Wire<CacheHitEntry>({
   decode: (input, cursor) => {
     const perBlockMetrics = unpack.arr(input, cursor, (cursor) => {
       const blockHeight = unpack.nullableStr(input, cursor);
-      const responseHash = unpack.sha256(input, blockHeight[1]);
+      const responseHash = unpack.hash(input, blockHeight[1]);
       const requestSizeInBytes = unpack.int(input, responseHash[1]);
       const responseSizeInBytes = unpack.int(input, requestSizeInBytes[1]);
       const timestamps = unpack.arr(input, responseSizeInBytes[1], (cursor) => unpack.date(input, cursor));
@@ -181,7 +181,7 @@ const cacheHitWire = new Wire<CacheHitEntry>({
       ];
     });
     const requestMethod = unpack.str(input, perBlockMetrics[1]);
-    const requestHash = unpack.sha256(input, requestMethod[1]);
+    const requestHash = unpack.hash(input, requestMethod[1]);
     const tiedToBlockHeight = unpack.bool(input, requestHash[1]);
     const blockHeightParam = unpack.nullableStr(input, tiedToBlockHeight[1]);
     const mayRevalidate = unpack.bool(input, blockHeightParam[1]);

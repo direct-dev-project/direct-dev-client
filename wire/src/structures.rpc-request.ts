@@ -1,4 +1,4 @@
-import { LRUByteSizeCache, normalizeRPCMethod, setBlockHeightParam, sha256, sortObject } from "@direct.dev/shared";
+import { LRUByteSizeCache, normalizeRPCMethod, setBlockHeightParam, hash, sortObject } from "@direct.dev/shared";
 
 import { pack, unpack } from "./core.pack.js";
 import { Wire } from "./core.wire.js";
@@ -731,7 +731,7 @@ export function hashRPCRequest(input: {
   requestMethod?: DirectRequestMethod;
   requestBody: RPCRequestStructure;
   overrideBlockHeight?: RPCBlockHeightParam;
-}): MaybePromise<DirectRequestHash> {
+}): DirectRequestHash {
   const requestMethod = input.requestMethod ?? normalizeRPCMethod(input.requestBody.method);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const reqId = idempotentMethods.has(requestMethod as any) ? "" : crypto.randomUUID();
@@ -754,30 +754,26 @@ export function hashRPCRequest(input: {
  */
 const withCache = (() => {
   if (typeof window === "undefined") {
-    return (hashInput: string) => sha256(hashInput) as Promise<DirectRequestHash>;
+    return (hashInput: string) => hash(hashInput) as DirectRequestHash;
   }
 
-  const cache = new LRUByteSizeCache<string, MaybePromise<DirectRequestHash>>(5_000_000);
+  const cache = new LRUByteSizeCache<string, DirectRequestHash>(5_000_000);
 
-  return (hashInput: string): MaybePromise<DirectRequestHash> => {
+  return (hashInput: string): DirectRequestHash => {
     if (hashInput.length > 250_000) {
       // if the hash input exceeds cacheable size limit, then always hash
-      return sha256(hashInput) as Promise<DirectRequestHash>;
+      return hash(hashInput) as DirectRequestHash;
     }
 
     // ... otherwise read hash from cache if possible
-    let hash = cache.get(hashInput);
+    let output = cache.get(hashInput);
 
-    if (hash === undefined) {
-      hash = sha256(hashInput) as Promise<DirectRequestHash>;
-      cache.set(hashInput, hash, hashInput.length);
-
-      hash.then((hash) => {
-        cache.set(hashInput, hash, hashInput.length);
-      });
+    if (output === undefined) {
+      output = hash(hashInput) as DirectRequestHash;
+      cache.set(hashInput, output, hashInput.length);
     }
 
-    return hash;
+    return output;
   };
 })();
 

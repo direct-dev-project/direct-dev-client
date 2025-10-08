@@ -7,6 +7,7 @@ import { holesky, mainnet, sepolia, sonic, sonicTestnet } from "viem/chains";
 
 import type { DirectRPCClientConfig } from "@direct.dev/client";
 import { makeDirectRPCClient } from "@direct.dev/client";
+import { mapMaybePromise } from "@direct.dev/shared";
 
 type DirectConfig = Omit<DirectRPCClientConfig, "networkId" | "failover"> &
   Partial<Pick<DirectRPCClientConfig, "failover">>;
@@ -111,22 +112,25 @@ export function createDirectViemTransport(config: DirectRPCClientConfig): Return
         const id = input.id ?? ++autoIncrementedId;
         const jsonrpc = input.jsonrpc ?? "2.0";
 
-        const res = await directClient.fetch({
-          ...input,
-          id,
-          jsonrpc,
-        });
+        return mapMaybePromise(
+          directClient.fetch({
+            ...input,
+            id,
+            jsonrpc,
+          }),
+          (res) => {
+            if ("error" in res) {
+              throw new RpcRequestError({
+                body: res,
+                error: res.error,
+                url: directClient.endpointUrl,
+              });
+            }
 
-        if ("error" in res) {
-          throw new RpcRequestError({
-            body: res,
-            error: res.error,
-            url: directClient.endpointUrl,
-          });
-        }
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return res.result as any;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            return res.result as any;
+          },
+        );
       },
     },
     {

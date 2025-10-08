@@ -63,7 +63,7 @@ export type CacheContinuationSyncEvent = {
      * checksum of the continuation, used to allow the client to perform
      * validation of a continuation before committing it to memory
      */
-    checksum: Sha256String;
+    checksum: HashStr;
 
     /**
      * collection of requests that can be propagated to latest block height
@@ -189,7 +189,7 @@ export const syncEvent = new Wire<SyncEventStructure>(
     "cache.continuation": {
       id: 5,
       encode: (input) =>
-        pack.sha256((input as CacheContinuationSyncEvent).data.checksum) +
+        pack.hash((input as CacheContinuationSyncEvent).data.checksum) +
         pack.arr(
           (input as CacheContinuationSyncEvent).data.unchanged,
           (item) => pack.int(item.requestIndex) + pack.date(item.expiresAt),
@@ -206,7 +206,7 @@ export const syncEvent = new Wire<SyncEventStructure>(
             wire.RPCResponse.encode(item.response, { requestMethod: null, preEncoded: item.__preEncodedResponse }),
         ),
       decode: (input, cursor) => {
-        const checksum = unpack.sha256(input, cursor);
+        const checksum = unpack.hash(input, cursor);
 
         const unchanged = unpack.arr(input, checksum[1], (cursor) => {
           const requestIndex = unpack.int(input, cursor);
@@ -275,13 +275,13 @@ export const syncEvent = new Wire<SyncEventStructure>(
  */
 export const requestHashSetDelta = new Wire<HashSetDelta<DirectRequestHash>>({
   encode: (input) =>
-    pack.sha256(input.checksum) +
-    pack.arr(input.added, (it) => pack.sha256(it)) +
-    pack.arr(input.removed, (it) => pack.sha256(it)),
+    pack.hash(input.checksum) +
+    pack.arr(input.added, (it) => pack.hash(it)) +
+    pack.arr(input.removed, (it) => pack.hash(it)),
   decode: (input, cursor) => {
-    const checksum = unpack.sha256(input, cursor);
-    const added = unpack.arr(input, checksum[1], (cursor) => unpack.sha256(input, cursor));
-    const removed = unpack.arr(input, added[1], (cursor) => unpack.sha256(input, cursor));
+    const checksum = unpack.hash(input, cursor);
+    const added = unpack.arr(input, checksum[1], (cursor) => unpack.hash(input, cursor));
+    const removed = unpack.arr(input, added[1], (cursor) => unpack.hash(input, cursor));
 
     return [
       {

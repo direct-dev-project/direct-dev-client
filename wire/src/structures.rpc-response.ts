@@ -1,4 +1,4 @@
-import { sortObject, sha256 } from "@direct.dev/shared";
+import { sortObject, hash } from "@direct.dev/shared";
 
 import { pack, unpack } from "./core.pack.js";
 import { Wire } from "./core.wire.js";
@@ -133,8 +133,8 @@ export const RPCResponse = new Wire<RPCResponseStructure, [options: RPCResponseO
  * consistent hasher for responses, which gracefully andles scrambled property
  * ordering and generates consistent hashes regardless of request ID.
  */
-export function hashRPCResponse(input: RPCResponseStructure): Promise<DirectResponseHash> {
-  return sha256(
+export function hashRPCResponse(input: RPCResponseStructure): DirectResponseHash {
+  return hash(
     sortObject(
       "result" in input
         ? {
@@ -144,5 +144,5 @@ export function hashRPCResponse(input: RPCResponseStructure): Promise<DirectResp
             error: input.error,
           },
     ),
-  ) as Promise<DirectResponseHash>;
+  ) as DirectResponseHash;
 }

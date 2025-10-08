@@ -44,12 +44,12 @@ export const syncRequest = new Wire<SyncRequest>(
       encode: (input) =>
         pack.str(input.sessionId) +
         /* eslint-disable @typescript-eslint/no-non-null-assertion */
-        pack.arr(Array.from(input.primer!.knownResponses), (item) => pack.sha256(item)) +
+        pack.arr(Array.from(input.primer!.knownResponses), (item) => pack.hash(item)) +
         telemetry.encode(input.telemetry!),
       /* eslint-enable @typescript-eslint/no-non-null-assertion */
       decode: (input, cursor) => {
         const sessionId = unpack.str(input, cursor);
-        const knownResponses = unpack.arr(input, sessionId[1], (cursor) => unpack.sha256(input, cursor));
+        const knownResponses = unpack.arr(input, sessionId[1], (cursor) => unpack.hash(input, cursor));
         const telemetryData = telemetry.decode(input, knownResponses[1]);
 
         return [
@@ -70,10 +70,10 @@ export const syncRequest = new Wire<SyncRequest>(
       encode: (input) =>
         pack.str(input.sessionId) +
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        pack.arr(Array.from(input.primer!.knownResponses), (item) => pack.sha256(item)),
+        pack.arr(Array.from(input.primer!.knownResponses), (item) => pack.hash(item)),
       decode: (input, cursor) => {
         const sessionId = unpack.str(input, cursor);
-        const knownResponses = unpack.arr(input, sessionId[1], (cursor) => unpack.sha256(input, cursor));
+        const knownResponses = unpack.arr(input, sessionId[1], (cursor) => unpack.hash(input, cursor));
 
         return [
           {

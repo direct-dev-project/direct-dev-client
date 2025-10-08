@@ -1,5 +1,11 @@
 # @direct.dev/typings
 
+## 0.6.1
+
+### Patch Changes
+
+- 16ec9b3: perf: refactor request hashing to reduce footprint and avoid event loop hops
+
 ## 0.6.0
 
 ### Minor Changes

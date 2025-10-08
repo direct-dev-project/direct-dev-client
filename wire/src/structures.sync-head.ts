@@ -102,18 +102,18 @@ const pendingBlockHeight = new Wire<NonNullable<SyncHead["pendingBlockHeight"]>>
 
 const primer = new Wire<NonNullable<SyncHead["primer"]>>({
   encode: (input) =>
-    pack.arr(input.syncSet, (item) => pack.sha256(item)) +
-    pack.arr(input.revalidateSet, (item) => pack.sha256(item)) +
+    pack.arr(input.syncSet, (item) => pack.hash(item)) +
+    pack.arr(input.revalidateSet, (item) => pack.hash(item)) +
     pack.arr(
       input.requestToResponseMap,
-      (item) => pack.sha256(item.requestHash) + pack.sha256(item.responseHash) + pack.date(item.expiresAt),
+      (item) => pack.hash(item.requestHash) + pack.hash(item.responseHash) + pack.date(item.expiresAt),
     ),
   decode: (input, cursor) => {
-    const syncSet = unpack.arr(input, cursor, (cursor) => unpack.sha256(input, cursor));
-    const revalidateSet = unpack.arr(input, syncSet[1], (cursor) => unpack.sha256(input, cursor));
+    const syncSet = unpack.arr(input, cursor, (cursor) => unpack.hash(input, cursor));
+    const revalidateSet = unpack.arr(input, syncSet[1], (cursor) => unpack.hash(input, cursor));
     const requestToResponseMap = unpack.arr(input, revalidateSet[1], (cursor) => {
-      const requestHash = unpack.sha256(input, cursor);
-      const responseHash = unpack.sha256(input, requestHash[1]);
+      const requestHash = unpack.hash(input, cursor);
+      const responseHash = unpack.hash(input, requestHash[1]);
       const expiresAt = unpack.date(input, responseHash[1]);
 
       return [

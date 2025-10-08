@@ -1,5 +1,15 @@
 # @direct.dev/client
 
+## 0.6.1
+
+### Patch Changes
+
+- 16ec9b3: perf: refactor request hashing to reduce footprint and avoid event loop hops
+- Updated dependencies [16ec9b3]
+  - @direct.dev/shared@0.6.1
+  - @direct.dev/wire@0.6.1
+  - @direct.dev/checkpoint@0.6.1
+
 ## 0.6.0
 
 ### Patch Changes

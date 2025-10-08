@@ -4,7 +4,7 @@ import {
   estimateJsonRpcSize,
   inferRequestHashFromCacheKey,
   Logger,
-  LRUCache,
+  mapMaybePromise,
 } from "@direct.dev/shared";
 
 import { DirectRPCBatchManager } from "./batch._manager.js";
@@ -63,13 +63,6 @@ export class DirectRequestRouter {
    */
   #cacheHits: Array<{ req: DirectRPCRequest; res: DirectRPCResultResponse | DirectRPCErrorResponse }> = [];
 
-  /**
-   * caching of request count per request hash, used for inspection/debugging
-   * in order to allow checking how well an application is suited for Direct
-   * Syncing.
-   */
-  #requestDistribution = new LRUCache<DirectRequestHash, number>(1000);
-
   constructor(
     config: Config,
     blockHeightManager: DirectBlockHeightManager,
@@ -113,15 +106,14 @@ export class DirectRequestRouter {
    * fetch one or more requests, performing automatic routing between
    * Direct.dev infrastructure and configured upstream providers.
    */
-  async fetch(req: FetchInput): Promise<FetchOutput>;
-  async fetch(req: FetchInput[]): Promise<FetchOutput[]>;
-  async fetch(req: MaybeArray<FetchInput>): Promise<MaybeArray<FetchOutput>>;
-  async fetch(req: MaybeArray<FetchInput>): Promise<MaybeArray<FetchOutput>> {
+  fetch(req: FetchInput, startedAt?: number): MaybePromise<FetchOutput>;
+  fetch(req: FetchInput[], startedAt?: number): MaybePromise<FetchOutput[]>;
+  fetch(req: MaybeArray<FetchInput>, startedAt?: number): MaybePromise<MaybeArray<FetchOutput>>;
+  fetch(req: MaybeArray<FetchInput>, startedAt = Date.now()): MaybePromise<MaybeArray<FetchOutput>> {
     if (this.#isDestroyed) {
       throw new Error("DirectRequestRouter.fetch(): instance destroyed");
     }
 
-    const startedAt = Date.now();
     let response: MaybePromise<Array<DirectRPCResultResponse | DirectRPCErrorResponse>> | undefined;
 
     try {
@@ -130,10 +122,10 @@ export class DirectRequestRouter {
       // in order to fully bypass Direct.dev infrastructure
       //
       if (this.#config.devMode) {
-        response = await this.#fetchFromFailover(Array.isArray(req) ? req : [req], undefined);
+        response = this.#fetchFromFailover(Array.isArray(req) ? req : [req], undefined);
 
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        return Array.isArray(req) ? response : response[0]!;
+        return response.then((res) => (Array.isArray(req) ? res : res[0]!));
       }
 
       //
@@ -144,45 +136,59 @@ export class DirectRequestRouter {
       const syncPromise = this.#syncManager?.wait();
 
       if (syncPromise) {
-        await syncPromise;
+        return syncPromise.then(() => this.fetch(req, startedAt));
       }
+
+      //
+      // STEP: otherwise perform request routing, prefering Direct.dev
+      // infrastructure for eligible requests
+      //
 
       const blockHeight = this.#blockHeightManager.getCurrent();
 
       try {
         // run requests through internal fetcher
         const reqs = Array.isArray(req) ? req : [req];
-        const output = await Promise.all(
-          reqs.map(async (req) => {
-            const [cacheKey, requestHash] = await this.#cacheManager.getCacheKey(req, blockHeight);
-            const response = await this.#fetch(requestHash, cacheKey, req, blockHeight);
+        const output = reqs.map((req) => {
+          const [cacheKey, requestHash] = this.#cacheManager.getCacheKey(req, blockHeight);
+          const response = this.#fetch(requestHash, cacheKey, req, blockHeight);
 
-            // track request distribution
-            this.#requestDistribution.set(requestHash, (this.#requestDistribution.get(requestHash) ?? 0) + 1);
+          return mapMaybePromise<
+            DirectRPCResultResponse | DirectRPCErrorResponse,
+            DirectRPCResultResponse | DirectRPCErrorResponse
+          >(response, (response) => ({
+            ...("result" in response ? { result: response.result } : { error: response.error }),
 
-            return {
-              response: Promise.resolve(response.response).then((response) => ({
-                ...("result" in response ? { result: response.result } : { error: response.error }),
+            // add hardcoded jsonrpc: "2.0" property for data received from
+            // Direct.dev infrastructure, but allow native jsonrpc property
+            // to pass-through if data was fetched directly from providers
+            jsonrpc: "jsonrpc" in response ? response.jsonrpc : "2.0",
 
-                // add hardcoded jsonrpc: "2.0" property for data received from
-                // Direct.dev infrastructure, but allow native jsonrpc property
-                // to pass-through if data was fetched directly from providers
-                jsonrpc: "jsonrpc" in response ? response.jsonrpc : "2.0",
+            // re-wrap response ID identical to the incoming request; this
+            // is necessary because we frequently re-write IDs when doing
+            // RPC request batching to Direct.dev infrastructure and for
+            // data delivered through in-memory or inflight cache layers
+            id: req.id,
+          }));
+        });
 
-                // re-wrap response ID identical to the incoming request; this
-                // is necessary because we frequently re-write IDs when doing
-                // RPC request batching to Direct.dev infrastructure and for
-                // data delivered through in-memory or inflight cache layers
-                id: req.id,
-              })),
-            };
-          }),
+        // if a single request was made, then return it's value immediately
+        if (!Array.isArray(req)) {
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+          const res = output[0]!;
+          response = mapMaybePromise(res, (res) => [res]);
+
+          return res;
+        }
+
+        // ... otherwise determine if all responses within batch was immediately
+        // resolved, and in that case return value synchroneously rather than as
+        // a wrapped promise
+        const instantOutput = output.filter(
+          (it): it is DirectRPCResultResponse | DirectRPCErrorResponse => "then" in it === false,
         );
 
-        response = Promise.all(output.map((it) => it.response));
-
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        return Array.isArray(req) ? response : Promise.resolve(response).then((res) => res[0]!);
+        return (response = instantOutput.length === output.length ? instantOutput : Promise.all(output));
       } finally {
         if (this.#batchManager?.length) {
           if (this.#batchWindowMs < 0) {
@@ -202,49 +208,42 @@ export class DirectRequestRouter {
         }
       }
     } finally {
-      // if enabled, then create faux requests for cache hits in network
-      // inspector
-      if (this.#config.networkInspect && this.#cacheHits.length > 0) {
-        fetch("data:application/json;direct=rpc," + encodeURIComponent(JSON.stringify(this.#cacheHits)), {
-          method: "POST",
-        }).then((it) => it.text());
+      (async () => {
+        const finalResponse = response && "then" in response ? await response : response;
+        const responseTimeMs = Date.now() - startedAt;
 
-        this.#cacheHits = [];
-      }
+        // if enabled, then create faux requests for cache hits in network
+        // inspector
+        if (this.#config.networkInspect && this.#cacheHits.length > 0) {
+          fetch("data:application/json;direct=rpc," + encodeURIComponent(JSON.stringify(this.#cacheHits)), {
+            method: "POST",
+          }).then((it) => it.text());
 
-      const finalResponse = response && "then" in response ? await response : response;
-      const responseTimeMs = Date.now() - startedAt;
-
-      //
-      // STEP: log operations
-      //
-      if (Array.isArray(req)) {
-        this.#logger.info("batch", `${req.length} requests served in ${responseTimeMs.toLocaleString()}ms`);
-      } else {
-        this.#logger.info(req.method, `served in ${responseTimeMs.toLocaleString()}ms`);
-      }
-
-      if (finalResponse) {
-        for (const res of finalResponse) {
-          this.#logger.verbose("fetch", `response served`, {
-            req: Array.isArray(req) ? req.find((it) => it.id === res.id) : req,
-            res,
-          });
+          this.#cacheHits = [];
         }
-      }
 
-      //
-      // STEP: collect telemetry for subsequent delivery to Direct.dev backend
-      //
-      const requestBody = estimateJsonRpcSize(req);
-      const responseBody = estimateJsonRpcSize(finalResponse);
+        //
+        // STEP: log operations
+        //
+        if (Array.isArray(req)) {
+          this.#logger.info("batch", `${req.length} requests served in ${responseTimeMs.toLocaleString()}ms`);
+        } else {
+          this.#logger.info(req.method, `served in ${responseTimeMs.toLocaleString()}ms`);
+        }
 
-      this.#telemetryManager.collectBandwidthUsage({
-        type: "rpc",
-        upload: requestBody + AVG_HTTP_REQUEST_HEADER_SIZE,
-        download: responseBody * (1 - AVG_GZIP_COMPRESSION) + AVG_HTTP_RESPONSE_HEADER_SIZE,
-      });
-      this.#telemetryManager.collectResponseTime(responseTimeMs);
+        //
+        // STEP: collect telemetry for subsequent delivery to Direct.dev backend
+        //
+        const requestBody = estimateJsonRpcSize(req);
+        const responseBody = estimateJsonRpcSize(finalResponse);
+
+        this.#telemetryManager.collectBandwidthUsage({
+          type: "rpc",
+          upload: requestBody + AVG_HTTP_REQUEST_HEADER_SIZE,
+          download: responseBody * (1 - AVG_GZIP_COMPRESSION) + AVG_HTTP_RESPONSE_HEADER_SIZE,
+        });
+        this.#telemetryManager.collectResponseTime(responseTimeMs);
+      })();
     }
   }
 
@@ -258,30 +257,30 @@ export class DirectRequestRouter {
     cacheKey: DirectCacheKey,
     input: DirectRPCRequest & { jsonrpc: string },
     blockHeight: RPCBlockHeight | undefined,
-  ): MaybePromise<{ response: MaybePromise<DirectRPCResultResponse | DirectRPCErrorResponse> }> {
+  ): MaybePromise<DirectRPCResultResponse | DirectRPCErrorResponse> {
     // validate incoming data structure
     const request = rpcRequestSchema(input);
 
     // deliver eth_blockNumber from in-memory cache if available
     if (request.method === "eth_blockNumber" && blockHeight != null) {
-      const response = {
+      const blockHeightResponse = {
         id: request.id,
         result: blockHeight,
       };
 
       try {
-        return { response };
+        return blockHeightResponse;
       } finally {
         this.#cacheHits.push({
           req: input,
-          res: { ...response, id: input.id },
+          res: { ...blockHeightResponse, id: input.id },
         });
 
         this.#telemetryManager.collectCacheHit({
           cacheKey,
           blockHeight,
           request,
-          response,
+          response: blockHeightResponse,
         });
       }
     }
@@ -292,7 +291,7 @@ export class DirectRequestRouter {
 
     if (inMemoryResponse) {
       try {
-        return { response: inMemoryResponse };
+        return inMemoryResponse;
       } finally {
         this.#cacheHits.push({
           req: input,
@@ -308,72 +307,55 @@ export class DirectRequestRouter {
       }
     }
 
-    return {
-      response: (async () => {
-        // check if the requested item is currently available through inflight
-        // mechanisms
-        for (
-          let inflightEntry = this.#cacheManager.getInflight(cacheKey);
-          inflightEntry != null;
-          inflightEntry = this.#cacheManager.getInflight(cacheKey)
-        ) {
-          const response = await inflightEntry;
+    return (async () => {
+      // check if the requested item is currently available through inflight
+      // mechanisms
+      for (
+        let inflightEntry = this.#cacheManager.getInflight(cacheKey);
+        inflightEntry != null;
+        inflightEntry = this.#cacheManager.getInflight(cacheKey)
+      ) {
+        const response = await inflightEntry;
 
-          // if the request was matched through inflight mechanisms, then return
-          // response directly
-          if (response) {
-            try {
-              return response;
-            } finally {
-              this.#cacheHits.push({
-                req: input,
-                res: { ...response, id: input.id },
-              });
+        // if the request was matched through inflight mechanisms, then return
+        // response directly
+        if (response) {
+          try {
+            return response;
+          } finally {
+            this.#cacheHits.push({
+              req: input,
+              res: { ...response, id: input.id },
+            });
 
-              this.#telemetryManager.collectInflightHit({
-                cacheKey,
-                blockHeight,
-                request,
-                response,
-              });
-            }
+            this.#telemetryManager.collectInflightHit({
+              cacheKey,
+              blockHeight,
+              request,
+              response,
+            });
           }
         }
+      }
 
-        // if we get here then push the request onto current batch and track for
-        // inflight uniqueness for subsequent requests
-        const inflightPromise = this.#cacheManager.openInflightRequest(cacheKey);
+      // if we get here then push the request onto current batch and track for
+      // inflight uniqueness for subsequent requests
+      const inflightPromise = this.#cacheManager.openInflightRequest(cacheKey);
 
-        this.#batchManager ??= new DirectRPCBatchManager(this.#logger, this.#config, {
-          blockHeight: this.#blockHeightManager.getCurrent(),
-        });
+      this.#batchManager ??= new DirectRPCBatchManager(this.#logger, this.#config, {
+        blockHeight: this.#blockHeightManager.getCurrent(),
+      });
 
-        this.#batchManager.push({
-          requestBody: {
-            ...request,
-            bypassMirror: this.#syncManager?.isActive() && !this.#syncManager.isRevalidated(requestHash),
-          },
-          requestKey: cacheKey,
-        });
+      this.#batchManager.push({
+        requestBody: {
+          ...request,
+          bypassMirror: this.#syncManager?.isActive() && !this.#syncManager.isRevalidated(requestHash),
+        },
+        requestKey: cacheKey,
+      });
 
-        return inflightPromise;
-      })().then((response) =>
-        Promise.resolve(response).then((response) => ({
-          ...response,
-
-          // add hardcoded jsonrpc: "2.0" property for data received from
-          // Direct.dev infrastructure, but allow native jsonrpc property to
-          // pass-through if data was fetched directly from providers
-          jsonrpc: "jsonrpc" in response ? response.jsonrpc : "2.0",
-
-          // re-wrap response ID identical to the incoming request; this is
-          // necessary because we frequently re-write IDs when doing RPC
-          // request batching to Direct.dev infrastructure and for data
-          // delivered through in-memory or inflight cache layers
-          id: request.id,
-        })),
-      ),
-    };
+      return inflightPromise;
+    })();
   }
 
   /**
@@ -706,30 +688,6 @@ export class DirectRequestRouter {
       // provider nodes
       return this.#fetchFromFailover(requests, true);
     }
-  }
-
-  /**
-   * inspect request distribution and return telemetry, to allow inspection of
-   * how an applications traffic patterns performs.
-   */
-  getDistribution() {
-    const requestCountsByHash = Array.from(this.#requestDistribution.values());
-    const repeatedRequestCountsByHash = requestCountsByHash.filter((it) => it > 1);
-    const totalRequestCount = requestCountsByHash.reduce((acc, it) => acc + it, 0);
-    const uniqueRequestCount = requestCountsByHash.length - repeatedRequestCountsByHash.length;
-
-    const medianRepeatFrequency = repeatedRequestCountsByHash
-      .sort((a, b) => a - b)
-      .at(Math.floor(repeatedRequestCountsByHash.length * 0.5));
-    const avgRepeatFrequency = (totalRequestCount - uniqueRequestCount) / repeatedRequestCountsByHash.length;
-
-    return {
-      requestHashCount: requestCountsByHash.length,
-      totalRequestCount,
-      uniqueRequestCount,
-      medianRepeatFrequency,
-      avgRepeatFrequency,
-    };
   }
 
   /**

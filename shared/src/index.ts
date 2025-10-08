@@ -17,7 +17,7 @@ export * from "./utils/async.timeout.js";
 export * from "./utils/backoff.js";
 export * from "./utils/generate-random-id.js";
 export * from "./utils/hash-set.js";
-export * from "./utils/hashing.sha256.js";
+export * from "./utils/hashing.hash.js";
 export * from "./utils/hashing.sort-object.js";
 export * from "./utils/logger.js";
 export * from "./utils/lru-cache.byte-size.js";

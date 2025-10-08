@@ -10,6 +10,7 @@ import type {
 
 import { makeDirectRPCClient } from "@direct.dev/client";
 import type { DirectRPCClient, DirectRPCClientConfig } from "@direct.dev/client";
+import { mapMaybePromise } from "@direct.dev/shared";
 
 import { networks } from "./constants.chains.js";
 
@@ -47,9 +48,9 @@ export default class DirectProvider extends JsonRpcProvider {
    * send RPC requests through the Direct core client.
    */
   async _send(payload: JsonRpcPayload | JsonRpcPayload[]): Promise<JsonRpcResult[]> {
-    const res = await this.#directClient.fetch(payload);
-
-    return Array.isArray(res) ? (res as JsonRpcResult[]) : ([res] as JsonRpcResult[]);
+    return mapMaybePromise(this.#directClient.fetch(payload), (res) =>
+      Array.isArray(res) ? (res as JsonRpcResult[]) : ([res] as JsonRpcResult[]),
+    );
   }
 
   /**

@@ -65,10 +65,10 @@ export class DirectCacheManager {
    * internal helper to translate a raw JSON-RPC request into it's designated
    * cache key for further lookups.
    */
-  async getCacheKey(
+  getCacheKey(
     requestBody: DirectRPCRequest,
     blockHeight: RPCBlockHeight | undefined,
-  ): Promise<[DirectCacheKey, DirectRequestHash]> {
+  ): [DirectCacheKey, DirectRequestHash] {
     const requestMethod = normalizeRPCMethod(requestBody.method);
     const blockHeightParam = getBlockHeightParam({ requestBody, requestMethod });
 
@@ -78,7 +78,7 @@ export class DirectCacheManager {
         // for requests targetting "latest" block height, ensure consistent
         // cache key usage to allow correct matching for predictively prefetched
         // requests
-        const requestHash = await wire.hashRPCRequest({
+        const requestHash = wire.hashRPCRequest({
           requestBody,
           requestMethod,
           overrideBlockHeight: "latest",
@@ -91,7 +91,7 @@ export class DirectCacheManager {
       case "safe": {
         // for requests targetting other block height tags, ensure that caching
         // is tied to current block height
-        const requestHash = await wire.hashRPCRequest({
+        const requestHash = wire.hashRPCRequest({
           requestBody,
           requestMethod,
         });
@@ -104,7 +104,7 @@ export class DirectCacheManager {
         // for requests that aren't targetting custom block heights, allow them
         // to be cached until expiration timestamp regardless of current block
         // height
-        const requestHash = await wire.hashRPCRequest({
+        const requestHash = wire.hashRPCRequest({
           requestBody,
           requestMethod,
         });
@@ -116,7 +116,7 @@ export class DirectCacheManager {
         // pending block height is considered uncacheable; create a stable key
         // for inflight uniqueness, but do not attempt to tie to current block
         // height as pending is inherently disconnected from stable blocks
-        const requestHash = await wire.hashRPCRequest({
+        const requestHash = wire.hashRPCRequest({
           requestBody,
           requestMethod,
         });
@@ -133,7 +133,7 @@ export class DirectCacheManager {
             // for blocks requesting a specific, recent block height, ensure
             // that they're hashed under "latest" block height - we assume that
             // the request was simply made using a stale value
-            const requestHash = await wire.hashRPCRequest({
+            const requestHash = wire.hashRPCRequest({
               requestBody,
               requestMethod,
               overrideBlockHeight: "latest",
@@ -145,7 +145,7 @@ export class DirectCacheManager {
 
         // if requesting an older block, consider it stable and immutable when
         // generating cache key
-        const requestHash = await wire.hashRPCRequest({
+        const requestHash = wire.hashRPCRequest({
           requestBody,
           requestMethod,
         });

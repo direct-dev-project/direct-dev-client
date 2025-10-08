@@ -4,6 +4,7 @@ import type { TransactionReceipt } from "@ethersproject/providers";
 
 import type { DirectRPCClient, DirectRPCClientConfig } from "@direct.dev/client";
 import { makeDirectRPCClient } from "@direct.dev/client";
+import { mapMaybePromise } from "@direct.dev/shared";
 
 import { networks } from "./constants.chains.js";
 
@@ -41,18 +42,21 @@ export default class DirectProvider extends StaticJsonRpcProvider {
    * send RPC requests through the Direct core client.
    */
   async send(method: string, params: unknown[]): Promise<unknown> {
-    const result = await this.#directClient.fetch({
-      id: ++this.#autoIncrementedId,
-      jsonrpc: "2.0",
-      method,
-      params,
-    });
+    return mapMaybePromise(
+      this.#directClient.fetch({
+        id: ++this.#autoIncrementedId,
+        jsonrpc: "2.0",
+        method,
+        params,
+      }),
+      (res) => {
+        if ("error" in res) {
+          throw new Error(res.error.message || "Unknown JSON-RPC error");
+        }
 
-    if ("error" in result) {
-      throw new Error(result.error.message || "Unknown JSON-RPC error");
-    }
-
-    return result.result;
+        return res.result;
+      },
+    );
   }
 
   /**

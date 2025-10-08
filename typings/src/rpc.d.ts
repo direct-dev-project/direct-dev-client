@@ -75,10 +75,10 @@ type DirectRPCHead = {
 };
 
 /**
- * branded subtype of string, to verify correctness of sha256 usage in
- * all integrations
+ * branded subtype of string, to verify correctness of hashes in all
+ * integrations.
  */
-type Sha256String = string & { readonly __brand: unique symbol };
+type HashStr = string & { readonly __brand: unique symbol };
 
 /**
  * branded subtype of string, to verify correctness of request hash usage in
@@ -88,7 +88,7 @@ type Sha256String = string & { readonly __brand: unique symbol };
  * block heights, used to reliably sample popularity and perform request
  * predictions
  */
-type DirectRequestHash = Sha256String & { readonly __subbrand: unique symbol };
+type DirectRequestHash = HashStr & { readonly __subbrand: unique symbol };
 
 /**
  * branded subtype of string, to verify correctness of cache key usage across
@@ -106,7 +106,7 @@ type DirectCacheKey = DirectRequestHash | `${DirectRequestHash}:${RPCBlockHeight
  * the response hash is a stable sha256 hash, which allows us to re-use the
  * same response across multiple
  */
-type DirectResponseHash = Sha256String & { readonly __subbrand: unique symbol };
+type DirectResponseHash = HashStr & { readonly __subbrand: unique symbol };
 
 /**
  * Strongly typed definition of cacheable requests, crafted by-hand based on the

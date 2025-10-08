@@ -4,6 +4,7 @@ import {
   isBlockHeightAhead,
   isRecord,
   iterateBlockSpan,
+  mapMaybePromise,
   readFromSessionStorage,
   sortObject,
   writeToSessionStorage,
@@ -274,10 +275,10 @@ export class DirectRPCClient {
    * performs one or more requests, dispatching them towards the relevant
    * upstream nodes depending on input and configurations.
    */
-  async fetch(req: FetchInput): Promise<FetchOutput>;
-  async fetch(req: FetchInput[]): Promise<FetchOutput[]>;
-  async fetch(req: MaybeArray<FetchInput>): Promise<MaybeArray<FetchOutput>>;
-  async fetch(req: MaybeArray<FetchInput>): Promise<MaybeArray<FetchOutput>> {
+  fetch(req: FetchInput): MaybePromise<FetchOutput>;
+  fetch(req: FetchInput[]): MaybePromise<FetchOutput[]>;
+  fetch(req: MaybeArray<FetchInput>): MaybePromise<MaybeArray<FetchOutput>>;
+  fetch(req: MaybeArray<FetchInput>): MaybePromise<MaybeArray<FetchOutput>> {
     // restart syncing if it's been paused due to periods of inactivity
     this.#syncManager?.start();
 
@@ -286,7 +287,7 @@ export class DirectRPCClient {
     try {
       return res;
     } finally {
-      this.#handleResponses(req, await res);
+      this.#handleResponses(req, res);
     }
   }
 
@@ -294,9 +295,9 @@ export class DirectRPCClient {
    * handle side effects of requests, to ensure that internal client state is
    * correctly updated in response to special edge cases.
    */
-  #handleResponses(_reqs: MaybeArray<FetchInput>, _res: MaybeArray<FetchOutput>): void {
+  async #handleResponses(_reqs: MaybeArray<FetchInput>, _res: MaybePromise<MaybeArray<FetchOutput>>): Promise<void> {
     const reqs = Array.isArray(_reqs) ? _reqs : [_reqs];
-    const responses = Array.isArray(_res) ? _res : [_res];
+    const responses = await mapMaybePromise(_res, (res) => (Array.isArray(res) ? res : [res]));
 
     // map all requests based on id
     const reqsById = new Map(reqs.map((it) => [it.id, it]));
@@ -454,13 +455,6 @@ export class DirectRPCClient {
     this.#telemetryManager.persistCriticalTelemetry();
     this.#syncManager?.persistState();
   };
-
-  /**
-   * allow external access to request distribution patterns for inspection.
-   */
-  getRequestDistribution() {
-    return this.#requestRouter.getDistribution();
-  }
 
   /**
    * destroy all nested managers associated with this client, ensuring that

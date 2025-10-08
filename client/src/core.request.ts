@@ -109,7 +109,7 @@ export class DirectRequestRouter {
   fetch(req: FetchInput, startedAt?: number): MaybePromise<FetchOutput>;
   fetch(req: FetchInput[], startedAt?: number): MaybePromise<FetchOutput[]>;
   fetch(req: MaybeArray<FetchInput>, startedAt?: number): MaybePromise<MaybeArray<FetchOutput>>;
-  fetch(req: MaybeArray<FetchInput>, startedAt = Date.now()): MaybePromise<MaybeArray<FetchOutput>> {
+  fetch(req: MaybeArray<FetchInput>, startedAt = performance.now()): MaybePromise<MaybeArray<FetchOutput>> {
     if (this.#isDestroyed) {
       throw new Error("DirectRequestRouter.fetch(): instance destroyed");
     }
@@ -210,7 +210,7 @@ export class DirectRequestRouter {
     } finally {
       (async () => {
         const finalResponse = response && "then" in response ? await response : response;
-        const responseTimeMs = Date.now() - startedAt;
+        const responseTimeMs = Math.round(performance.now() - startedAt);
 
         // if enabled, then create faux requests for cache hits in network
         // inspector
@@ -242,7 +242,7 @@ export class DirectRequestRouter {
           upload: requestBody + AVG_HTTP_REQUEST_HEADER_SIZE,
           download: responseBody * (1 - AVG_GZIP_COMPRESSION) + AVG_HTTP_RESPONSE_HEADER_SIZE,
         });
-        this.#telemetryManager.collectResponseTime(responseTimeMs);
+        this.#telemetryManager.collectResponseTime(Math.round(responseTimeMs));
       })();
     }
   }

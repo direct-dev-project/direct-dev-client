@@ -1,5 +1,13 @@
 # @direct.dev/wire
 
+## 0.6.2
+
+### Patch Changes
+
+- ed413cd: fix: properly handle encoding of new trimmed hashes
+- Updated dependencies [ed413cd]
+  - @direct.dev/shared@0.6.2
+
 ## 0.6.1
 
 ### Patch Changes

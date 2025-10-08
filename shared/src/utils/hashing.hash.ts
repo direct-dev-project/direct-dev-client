@@ -7,20 +7,11 @@
  * ⚠️ Not cryptographically secure.
  */
 export function hash(input: string): HashStr {
-  // LEB-64 encoding of input length, to use as a postfix on output hash string
-  // to further bucket collissions on a per-length bucket basis
-  let len = input.length;
-  let postfix = "";
-  do {
-    let byte = len & 0b00111111;
-    len >>= 6;
-    if (len > 0) byte |= 0b01000000;
-    postfix += String.fromCharCode(byte);
-  } while (len > 0);
+  const len = input.length;
 
-  // create extremely fast fnv1a 64+32 bit hashes and length postfix to create
-  // an extremely robust hash with low collission risk
-  return (fnv1a64(input) + fnv1a32(input) + postfix) as HashStr;
+  return (fnv1a64(input) +
+    fnv1a32(input) +
+    String.fromCharCode((len >>> 0) & 0x7f, (len >>> 7) & 0x7f, (len >>> 14) & 0x7f, (len >>> 21) & 0x7f)) as HashStr;
 }
 
 /**

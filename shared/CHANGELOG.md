@@ -1,5 +1,11 @@
 # @direct.dev/shared
 
+## 0.6.2
+
+### Patch Changes
+
+- ed413cd: fix: properly handle encoding of new trimmed hashes
+
 ## 0.6.1
 
 ### Patch Changes

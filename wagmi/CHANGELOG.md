@@ -1,5 +1,14 @@
 # @direct.dev/wagmi
 
+## 0.6.2
+
+### Patch Changes
+
+- Updated dependencies [ed413cd]
+  - @direct.dev/shared@0.6.2
+  - @direct.dev/client@0.6.2
+  - @direct.dev/viem@0.6.2
+
 ## 0.6.1
 
 ### Patch Changes

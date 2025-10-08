@@ -57,8 +57,8 @@ export const pack = {
   },
 
   hash(input: HashStr): string {
-    // hashes are pre-encoded in a fixated layout with 15 characters + an LEB-64
-    // encoded string length postfix; add the string as-is
+    // hashes are fixed-length 19 bytes long, encode "as is" as it can be
+    // reliably decoded
     return input;
   },
 
@@ -342,18 +342,8 @@ export const unpack = {
   },
 
   hash(input: string, cursor: number): [HashStr, number] {
-    // hashes include 15 fixed-length bytes for encoding hashes, followed by an
-    // LEB-64 encoded length postfix
-    let endCursor = cursor + 15;
-
-    // @DECODE LEB-64
-    let byte = input.charCodeAt(endCursor);
-
-    while (byte & 0b01000000) {
-      byte = input.charCodeAt(++endCursor);
-    }
-
-    return [input.slice(cursor, endCursor + 1) as HashStr, endCursor + 1];
+    // hashes are fixed-length 19 bytes long
+    return [input.slice(cursor, cursor + 19) as HashStr, cursor + 19];
   },
 
   nullableStr(input: string, cursor: number): [string | null | undefined, number] {

@@ -32,9 +32,15 @@ const ROLLING_STREAM_TIMEOUT_MS = 45_000;
 
 /**
  * duration after which sync stream will be closed, if there has been no
- * request activity.
+ * request activity during initial page load.
  */
-const INACTIVITY_TIMEOUT_MS = 10_000;
+const INACTIVITY_INITIAL_TIMEOUT_MS = 10_000;
+
+/**
+ * Threshold for latest activity, prior to rolling sync streams - preventing
+ * automatic rolling if activity on the network has stopped.
+ */
+const INACTIVATY_THRESHOLD_MS = 30_000;
 
 /**
  * single-character op codes designating operations to be performed when
@@ -102,6 +108,12 @@ export class DirectSyncManager {
   #cacheManager: DirectCacheManager;
   #clockManager: DirectClockManager;
   #telemetryManager: DirectTelemetryManager;
+
+  /**
+   * Contains timestamp for last activity detected within this sync stream;
+   * used to prevent rolling on inactive networks to avoid wasting bandwidth.
+   */
+  #lastActivityAt = 0;
 
   /**
    * queue to ensure that events are played back in the exact same order that
@@ -241,7 +253,7 @@ export class DirectSyncManager {
    * trigger a request to Direct.dev layer, to fetch primer package to allow
    * local state syncing.
    */
-  async start() {
+  async start(fromRequest?: boolean) {
     if (this.#isDestroyed) {
       throw new Error("DirectSyncManager.start(): instance destroyed");
     }
@@ -249,9 +261,17 @@ export class DirectSyncManager {
     clearTimeout(this.#restartTimeout);
     clearTimeout(this.#inactiveTimeout);
 
-    this.#inactiveTimeout = setTimeout(() => {
-      this.stop();
-    }, INACTIVITY_TIMEOUT_MS);
+    if (!fromRequest) {
+      // if the sync stream wasn't explicitly activated from a request, then
+      // schedule automatic timeout after 10 seconds to avoid wasting bandwidth
+      // on multi-chain page loads
+      this.#inactiveTimeout = setTimeout(() => {
+        this.stop();
+      }, INACTIVITY_INITIAL_TIMEOUT_MS);
+    }
+
+    // register timestamp for latest activity on the sync stream
+    this.#lastActivityAt = Date.now();
 
     if (!this.#isStopped || this.#backoffManager.shouldBackOff(this.#config.endpointUrl)) {
       return;
@@ -920,7 +940,13 @@ export class DirectSyncManager {
     clearTimeout(this.#rollTimeout);
 
     this.#rollTimeout = setTimeout(() => {
-      this.#openStream();
+      const timeSinceLastActivity = Date.now() - this.#lastActivityAt;
+
+      if (timeSinceLastActivity < INACTIVATY_THRESHOLD_MS) {
+        this.#openStream();
+      } else {
+        this.stop();
+      }
     }, ROLLING_STREAM_TIMEOUT_MS);
   }
 

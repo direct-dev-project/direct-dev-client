@@ -1,5 +1,14 @@
 # @direct.dev/pulse
 
+## 0.6.3
+
+### Patch Changes
+
+- Updated dependencies [c6be586]
+  - @direct.dev/checkpoint@0.6.3
+  - @direct.dev/shared@0.6.3
+  - @direct.dev/wire@0.6.3
+
 ## 0.6.2
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @direct.dev/shared
 
+## 0.6.3
+
+### Patch Changes
+
+- c6be586: fix: adjust Checkpoint for new hashing structure
+
 ## 0.6.2
 
 ### Patch Changes

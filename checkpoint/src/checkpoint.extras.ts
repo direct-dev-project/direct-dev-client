@@ -1,6 +1,6 @@
 import { makeEnumPacker } from "@direct.dev/wire";
 
-import { str } from "./checkpoint.primitives.js";
+import { hash, str } from "./checkpoint.primitives.js";
 import type { Checkpoint } from "./typings.js";
 import { assert } from "./util.assert.js";
 import { makeCheckpoint } from "./util.make-checker.js";
@@ -32,4 +32,12 @@ export function literal<const T extends string | number | boolean>(...values: [T
  */
 export function typedStr<T extends string>(): Checkpoint<T> {
   return str as Checkpoint<T>;
+}
+
+/**
+ * makes a Checkpoint, which validates that `x` is a hash of the designated
+ * type for subsequent TypeScript inference.
+ */
+export function typedHash<T extends HashStr>(): Checkpoint<T> {
+  return hash as Checkpoint<T>;
 }

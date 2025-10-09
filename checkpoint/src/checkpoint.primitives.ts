@@ -32,6 +32,22 @@ export const strOrNum = makeCheckpoint<string | number>(
 );
 
 /**
+ * validates that `x` is a hash string.
+ */
+export const hash = makeCheckpoint<HashStr>(
+  (ctx, x) => {
+    assert(typeof x === "string", `${ctx} must be a string`);
+    assert(x.length === 19, `${ctx} must be exactly 19 characters long`);
+
+    return x as HashStr;
+  },
+  {
+    encode: (_, x) => pack.str(x),
+    decode: (_, input, cursor) => unpack.str(input, cursor),
+  },
+);
+
+/**
  * validates that `x` is a number.
  */
 export const num = makeCheckpoint<number>(

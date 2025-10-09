@@ -103,12 +103,12 @@ export const syncHeadSchema = checkpoint<wire.SyncHead>(
     ),
     primer: check.optional(
       check.shape({
-        syncSet: check.arr(check.typedStr<DirectRequestHash>()),
-        revalidateSet: check.arr(check.typedStr<DirectRequestHash>()),
+        syncSet: check.arr(check.typedHash<DirectRequestHash>()),
+        revalidateSet: check.arr(check.typedHash<DirectRequestHash>()),
         requestToResponseMap: check.arr(
           check.shape({
-            requestHash: check.typedStr<DirectRequestHash>(),
-            responseHash: check.typedStr<DirectResponseHash>(),
+            requestHash: check.typedHash<DirectRequestHash>(),
+            responseHash: check.typedHash<DirectResponseHash>(),
             expiresAt: check.date,
           }),
         ),
@@ -148,21 +148,21 @@ export const syncEventSchema = checkpoint<wire.SyncEventStructure>(
       event: check.literal("cache.delta"),
       data: check.shape({
         syncSet: check.shape({
-          checksum: check.typedStr<HashSetChecksum>(),
-          added: check.arr(check.typedStr<DirectRequestHash>()),
-          removed: check.arr(check.typedStr<DirectRequestHash>()),
+          checksum: check.typedHash<HashSetChecksum>(),
+          added: check.arr(check.typedHash<DirectRequestHash>()),
+          removed: check.arr(check.typedHash<DirectRequestHash>()),
         }),
         revalidateSet: check.shape({
-          checksum: check.typedStr<HashSetChecksum>(),
-          added: check.arr(check.typedStr<DirectRequestHash>()),
-          removed: check.arr(check.typedStr<DirectRequestHash>()),
+          checksum: check.typedHash<HashSetChecksum>(),
+          added: check.arr(check.typedHash<DirectRequestHash>()),
+          removed: check.arr(check.typedHash<DirectRequestHash>()),
         }),
       }),
     }),
     check.shape({
       event: check.literal("cache.continuation"),
       data: check.shape({
-        checksum: check.typedStr<HashSetChecksum>(),
+        checksum: check.typedHash<HashSetChecksum>(),
         unchanged: check.arr(
           check.shape({
             requestIndex: check.num,
@@ -215,8 +215,8 @@ export const persistedSyncStateSchema = checkpoint<PersistedSyncState>(
   "persistedSyncState",
   check.shape({
     hashSet: check.shape({
-      items: check.arr(check.typedStr<DirectRequestHash>()),
-      checksum: check.typedStr<HashSetChecksum>(),
+      items: check.arr(check.typedHash<DirectRequestHash>()),
+      checksum: check.typedHash<HashSetChecksum>(),
     }),
   }),
 );

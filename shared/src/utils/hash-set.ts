@@ -40,7 +40,7 @@ export class HashSet<T extends string> {
   /**
    * checksum of the current contents of the hash set.
    */
-  #checksum = sha256EmptyStr as HashSetChecksum;
+  #checksum = (hashOfEmptyString ??= hash("")) as HashSetChecksum;
 
   constructor(fromJSON?: HashSetJSON<T>) {
     if (fromJSON) {
@@ -169,4 +169,4 @@ export class HashSet<T extends string> {
   }
 }
 
-const sha256EmptyStr = 'ql\x18D\x14cx\x1C\n&_?&"2o\\I\x04zr\x07HdMdiJ$V2\x1B<\x14W\x05(';
+let hashOfEmptyString: HashStr | undefined;

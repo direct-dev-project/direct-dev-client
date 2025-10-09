@@ -97,6 +97,56 @@ export function arr<T>(
 }
 
 /**
+ * makes a checkpoint, which validates that `x` is a tuple containing a fixed
+ * number of entries, and then passes each value through the provided sub
+ * checkpoint.
+ */
+export function tuple<const T extends unknown[]>(checkpoints: { [K in keyof T]: Checkpoint<T[K]> }): Checkpoint<T> {
+  const tupleSize = checkpoints.length;
+
+  return makeCheckpoint(
+    (ctx, x) => {
+      assert(Array.isArray(x), `${ctx} must be an array`);
+      assert(x.length === tupleSize, `${ctx} doesn't match required tuple length`);
+
+      const res = new Array(tupleSize) as T;
+
+      for (let i = 0; i < tupleSize; i++) {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        res[i] = checkpoints[i]!(`${ctx}[${i}]`, x[i]);
+      }
+
+      return res;
+    },
+    {
+      encode: (ctx, x) => {
+        let res = "";
+
+        for (let i = 0; i < tupleSize; i++) {
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+          res += checkpoints[i]!.encode(`${ctx}[${i}]`, x[i]);
+        }
+
+        return res;
+      },
+      decode: (ctx, input, cursor) => {
+        const res = new Array(tupleSize);
+
+        for (let i = 0; i < tupleSize; i++) {
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+          const subRes = checkpoints[i]!.decode(`${ctx}[${i}]`, input, cursor);
+
+          res[i] = subRes[0];
+          cursor = subRes[1];
+        }
+
+        return [res, cursor];
+      },
+    },
+  );
+}
+
+/**
  * makes a Checkpoint, which validates that `x` is one of a union of other
  * Checkpoints.
  */
@@ -132,11 +182,11 @@ export function union<const T extends ReadonlyArray<Checkpoint<any>>>(
 }
 
 /**
- * makes a checkpoint, which passes null or undefined through and otherwise
- * runs the provided checkpoint on real values.
+ * Makes a checkpoint, which passes null through and otherwise runs the
+ * provided checkpoint on real values.
  */
-export function optional<T>(checkpoint: Checkpoint<T>): Checkpoint<T | null | undefined> {
-  const wire = new Wire<T | null | undefined, [ctx: string]>(
+export function nullish<T>(checkpoint: Checkpoint<T>): Checkpoint<T | null> {
+  const wire = new Wire<T | null, [ctx: string]>(
     {
       null: {
         id: 1,
@@ -144,21 +194,15 @@ export function optional<T>(checkpoint: Checkpoint<T>): Checkpoint<T | null | un
         decode: (input, cursor) => [null, cursor],
       },
 
-      undefined: {
-        id: 2,
-        encode: () => "",
-        decode: (input, cursor) => [undefined, cursor],
-      },
-
       defined: {
-        id: 3,
+        id: 2,
         encode: (input, extraArgs) => checkpoint.encode(extraArgs[0], input),
         decode: (input, cursor) => checkpoint.decode("", input, cursor),
       },
     },
     (input) => {
-      if (input == null) {
-        return input === null ? "null" : "undefined";
+      if (input === null) {
+        return "null";
       }
 
       return "defined";
@@ -168,7 +212,52 @@ export function optional<T>(checkpoint: Checkpoint<T>): Checkpoint<T | null | un
   return Object.assign(
     makeCheckpoint(
       (ctx: string, x: unknown) => {
-        if (x == null) {
+        if (x === null) {
+          return x;
+        }
+
+        return checkpoint(ctx, x);
+      },
+      {
+        encode: (ctx, x) => wire.encode(x, ctx),
+        decode: (ctx, input, cursor) => wire.decode(input, cursor),
+      },
+    ),
+  );
+}
+
+/**
+ * Makes a checkpoint, which passes undefined through and otherwise runs the
+ * provided checkpoint on real values.
+ */
+export function optional<T>(checkpoint: Checkpoint<T>): Checkpoint<T | undefined> {
+  const wire = new Wire<T | undefined, [ctx: string]>(
+    {
+      undefined: {
+        id: 1,
+        encode: () => "",
+        decode: (input, cursor) => [undefined, cursor],
+      },
+
+      defined: {
+        id: 2,
+        encode: (input, extraArgs) => checkpoint.encode(extraArgs[0], input),
+        decode: (input, cursor) => checkpoint.decode("", input, cursor),
+      },
+    },
+    (input) => {
+      if (input === void 0) {
+        return "undefined";
+      }
+
+      return "defined";
+    },
+  );
+
+  return Object.assign(
+    makeCheckpoint(
+      (ctx: string, x: unknown) => {
+        if (x === undefined) {
           return x;
         }
 

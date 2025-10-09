@@ -1,5 +1,13 @@
 # @direct.dev/viem
 
+## 0.6.3
+
+### Patch Changes
+
+- Updated dependencies [c6be586]
+  - @direct.dev/client@0.6.3
+  - @direct.dev/shared@0.6.3
+
 ## 0.6.2
 
 ### Patch Changes

@@ -280,7 +280,7 @@ export class DirectRPCClient {
   fetch(req: MaybeArray<FetchInput>): MaybePromise<MaybeArray<FetchOutput>>;
   fetch(req: MaybeArray<FetchInput>): MaybePromise<MaybeArray<FetchOutput>> {
     // restart syncing if it's been paused due to periods of inactivity
-    this.#syncManager?.start();
+    this.#syncManager?.start(true);
 
     const res = this.#requestRouter.fetch(req);
 

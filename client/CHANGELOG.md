@@ -1,5 +1,15 @@
 # @direct.dev/client
 
+## 0.6.3
+
+### Patch Changes
+
+- c6be586: fix: adjust Checkpoint for new hashing structure
+- Updated dependencies [c6be586]
+  - @direct.dev/checkpoint@0.6.3
+  - @direct.dev/shared@0.6.3
+  - @direct.dev/wire@0.6.3
+
 ## 0.6.2
 
 ### Patch Changes

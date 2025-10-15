@@ -1,12 +1,13 @@
 import { it, expect, beforeEach } from "vitest";
 
-import type { Checkpoint } from "@direct.dev/checkpoint";
 import { check } from "@direct.dev/checkpoint";
 
 import { PulseHistogram } from "../instrument.histogram.js";
 import type { HistogramDataPoint } from "../typings.js";
 
-let instrument: PulseHistogram<{ method: Checkpoint<string> }>;
+const labels = null;
+const attrs = check.shape({ method: check.str });
+let instrument: PulseHistogram<typeof labels, typeof attrs>;
 
 beforeEach(() => {
   instrument = new PulseHistogram(
@@ -17,7 +18,8 @@ beforeEach(() => {
       exemplars: { strategy: "ring", capacity: 3 },
       bounds: [10, 20, 30],
     },
-    { method: check.str },
+    labels,
+    attrs,
   );
 });
 
@@ -32,7 +34,7 @@ it("upper-inclusive buckets [0..b0], (b0..b1], ... , (bn-1..+∞)", () => {
   // bucket2: (20,30]     -> 21, 30   => 2
   // bucket3: (30,+∞)     -> 31       => 1
   const samples = [0, 5, 10, 11, 20, 21, 30, 31];
-  for (const v of samples) instrument.record(undefined, { method: "m" }, v);
+  for (const v of samples) instrument.record(undefined, v, { method: "m" });
 
   const out = instrument.flush().collected as [HistogramDataPoint];
   expect(out).toHaveLength(1);
@@ -51,24 +53,24 @@ it("upper-inclusive buckets [0..b0], (b0..b1], ... , (bn-1..+∞)", () => {
 });
 
 it("ignores negative and non-finite values entirely", () => {
-  instrument.record(undefined, { method: "m" }, -1);
-  instrument.record(undefined, { method: "m" }, Number.NaN);
-  instrument.record(undefined, { method: "m" }, Number.POSITIVE_INFINITY);
-  instrument.record(undefined, { method: "m" }, Number.NEGATIVE_INFINITY);
+  instrument.record(undefined, -1, { method: "m" });
+  instrument.record(undefined, Number.NaN, { method: "m" });
+  instrument.record(undefined, Number.POSITIVE_INFINITY, { method: "m" });
+  instrument.record(undefined, Number.NEGATIVE_INFINITY, { method: "m" });
 
   expect(instrument.flush().collected).toEqual([]);
 });
 
 it("separates series by attribute set", () => {
   // m1: 0, 15, 25 -> [1,1,1,0]
-  instrument.record(undefined, { method: "m1" }, 0);
-  instrument.record(undefined, { method: "m1" }, 15);
-  instrument.record(undefined, { method: "m1" }, 25);
+  instrument.record(undefined, 0, { method: "m1" });
+  instrument.record(undefined, 15, { method: "m1" });
+  instrument.record(undefined, 25, { method: "m1" });
 
   // m2: 10, 10, 19 -> [2,1,0,0]
-  instrument.record(undefined, { method: "m2" }, 10);
-  instrument.record(undefined, { method: "m2" }, 10);
-  instrument.record(undefined, { method: "m2" }, 19);
+  instrument.record(undefined, 10, { method: "m2" });
+  instrument.record(undefined, 10, { method: "m2" });
+  instrument.record(undefined, 19, { method: "m2" });
 
   const out = normalize(instrument.flush().collected as [HistogramDataPoint, ...HistogramDataPoint[]]);
   expect(out).toEqual(
@@ -101,11 +103,12 @@ it("counts length equals bounds length + 1 and total count equals number of vali
   const h = new PulseHistogram(
     "lat",
     { unit: "ms", capacity: 50, exemplars: { strategy: "ring", capacity: 3 }, bounds: [5, 10, 100] },
-    { method: check.str },
+    labels,
+    attrs,
   );
 
   const vals = [0, 1, 4, 5, 6, 10, 11, 99, 100, 101, 1000];
-  vals.forEach((v) => h.record(undefined, { method: "m" }, v));
+  vals.forEach((v) => h.record(undefined, v, { method: "m" }));
 
   const [dp] = h.flush().collected as [HistogramDataPoint];
   expect(dp.counts).toHaveLength(4);
@@ -115,13 +118,13 @@ it("counts length equals bounds length + 1 and total count equals number of vali
 });
 
 it("window isolation: successive flushes are independent", () => {
-  instrument.record(undefined, { method: "m" }, 1);
-  instrument.record(undefined, { method: "m" }, 2);
+  instrument.record(undefined, 1, { method: "m" });
+  instrument.record(undefined, 2, { method: "m" });
   const first = instrument.flush().collected as [HistogramDataPoint, ...HistogramDataPoint[]];
   expect(first).toHaveLength(1);
   expect(first[0].counts.reduce((a, b) => a + b, 0)).toBe(2);
 
-  instrument.record(undefined, { method: "m" }, 3);
+  instrument.record(undefined, 3, { method: "m" });
   const second = instrument.flush().collected as [HistogramDataPoint, ...HistogramDataPoint[]];
   expect(second).toHaveLength(1);
   expect(second[0].counts.reduce((a, b) => a + b, 0)).toBe(1);
@@ -139,14 +142,15 @@ it("preserves floating-point samples in sum (bucketing still integral)", () => {
       exemplars: { strategy: "ring", capacity: 3 },
       bounds: [0.1, 1, 10].map(Math.trunc) as [number, ...number[]],
     },
-    { method: check.str },
+    labels,
+    attrs,
   );
 
   // Note: your implementation requires uint32 bounds, so we coerce via
   // Math.trunc
 
   const vals = [0, 0.05, 0.1, 0.11, 0.5, 1, 1.01, 9.99, 10, 10.01];
-  vals.forEach((v) => h.record(undefined, { method: "m" }, v));
+  vals.forEach((v) => h.record(undefined, v, { method: "m" }));
 
   const [dp] = h.flush().collected as [HistogramDataPoint];
   expect(dp.sum).toBeCloseTo(

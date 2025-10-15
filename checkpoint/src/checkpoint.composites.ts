@@ -10,56 +10,59 @@ import { makeCheckpoint } from "./util.make-checker.js";
  */
 export function shape<T extends Record<string, unknown>>(schema: {
   [K in keyof T]: Checkpoint<T[K]>;
-}): Checkpoint<T> {
+}): Checkpoint<T> & { keys: Array<keyof T> } {
   const nested = Object.entries(schema) as Array<[string, Checkpoint<T[keyof T]>]>;
 
-  return makeCheckpoint(
-    (ctx, x) => {
-      assert(isRecord(x), `${ctx} must be a record`);
+  return Object.assign(
+    makeCheckpoint(
+      (ctx, x) => {
+        assert(isRecord(x), `${ctx} must be a record`);
 
-      return nested.reduce(
-        (acc, [key, checkpoint]) => {
-          if (!Object.prototype.hasOwnProperty.call(x, key)) {
-            if (isOptional in checkpoint && checkpoint[isOptional] === true) {
-              // if this is an optional value, and it doesn't exist on the input
-              // structure - then discard it on output structure as well
-              return acc;
+        return nested.reduce(
+          (acc, [key, checkpoint]) => {
+            if (!Object.prototype.hasOwnProperty.call(x, key)) {
+              if (isOptional in checkpoint && checkpoint[isOptional] === true) {
+                // if this is an optional value, and it doesn't exist on the
+                // input structure - then discard it on output structure as well
+                return acc;
+              }
+
+              throw new Error(`${ctx}.${key} is required`);
             }
 
-            throw new Error(`${ctx}.${key} is required`);
+            acc[key] = checkpoint(`${ctx}.${key}`, x[key]);
+
+            return acc;
+          },
+          {} as Record<string, unknown>,
+        ) as T;
+      },
+      {
+        encode: (ctx, x) => {
+          let result = "";
+
+          for (const [key, schema] of nested) {
+            result += schema.encode(`${ctx}.${key}`, x[key]);
           }
 
-          acc[key] = checkpoint(`${ctx}.${key}`, x[key]);
-
-          return acc;
+          return result;
         },
-        {} as Record<string, unknown>,
-      ) as T;
-    },
-    {
-      encode: (ctx, x) => {
-        let result = "";
 
-        for (const [key, schema] of nested) {
-          result += schema.encode(`${ctx}.${key}`, x[key]);
-        }
+        decode: (ctx, input, cursor) => {
+          const result: Partial<T> = {};
 
-        return result;
+          for (const [key, schema] of nested) {
+            const value = schema.decode(`${ctx}.${key}`, input, cursor);
+
+            (result as Record<string, unknown>)[key] = value[0];
+            cursor = value[1];
+          }
+
+          return [result as T, cursor];
+        },
       },
-
-      decode: (ctx, input, cursor) => {
-        const result: Partial<T> = {};
-
-        for (const [key, schema] of nested) {
-          const value = schema.decode(`${ctx}.${key}`, input, cursor);
-
-          (result as Record<string, unknown>)[key] = value[0];
-          cursor = value[1];
-        }
-
-        return [result as T, cursor];
-      },
-    },
+    ),
+    { keys: Object.keys(schema) },
   );
 }
 

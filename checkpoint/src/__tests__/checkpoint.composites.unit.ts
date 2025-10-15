@@ -55,10 +55,14 @@ describe("arr", () => {
 });
 
 describe("optional", () => {
-  it("passes through null and undefined", () => {
+  it("passes through undefined", () => {
     const cp = optional(num);
-    expect(cp("age", null)).toBeNull();
     expect(cp("age", undefined)).toBeUndefined();
+  });
+
+  it("rejects null", () => {
+    const cp = optional(num);
+    expect(() => cp("age", null)).toThrowError("age must be a number");
   });
 
   it("validates non-null values", () => {

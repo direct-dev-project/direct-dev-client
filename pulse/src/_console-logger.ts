@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 
-import type { HighResTimestamp, LogLevel, LogWriter, PulseOrigin, PulseSpan } from "./typings.js";
+import type { LogFields, LogLevel, PulseContext, PulseOrigin, PulseSpan } from "./typings.js";
+import { encodeSpanId, encodeTraceId } from "./util.generate-ids.js";
 
 type Options = {
   /**
@@ -12,17 +13,25 @@ type Options = {
    * Custom timestamp formatter. Defaults to HH:mm:ss.SSS (local time, no date
    * and timezone).
    */
-  formatTimestamp?: (ts: HighResTimestamp) => string;
+  formatTimestamp?: (ts: number) => string;
 };
 
-const RESOLVED = Promise.resolve();
+export type ConsoleWriter = (
+  origin: PulseOrigin,
+  level: Exclude<LogLevel, "silent">,
+  ts: number,
+  message: string,
+  span: PulseSpan | undefined,
+  context: PulseContext | undefined,
+  fields: LogFields,
+) => void;
 
 /**
  * Very small, allocation-light console writer for single-tenant use.
  * - Strips projectId/coloId/continentId from origin
  * - Optional prefix for embedding in external apps
  */
-export function makeConsoleWriter(opts: Options = {}): LogWriter {
+export function makeConsoleWriter(opts: Options = {}): ConsoleWriter {
   const { prefix, formatTimestamp = defaultFormatTimestamp } = opts;
 
   //
@@ -50,20 +59,18 @@ export function makeConsoleWriter(opts: Options = {}): LogWriter {
   //
   // STEP: build the actual logger callback
   //
-  return function consoleWriter(level, ts, message, origin, span, context, fields): Promise<void> {
+  return (origin, level, ts, message, span, context, fields) => {
     methodForLevel[level](formatTimestamp(ts), message, {
       ...context,
       ...fields,
       ...formatSpan(span),
       ...formatOrigin(origin),
     });
-
-    return RESOLVED;
   };
 }
 
-function defaultFormatTimestamp(ts: HighResTimestamp): string {
-  const date = new Date(Number(BigInt(ts) / 1_000_000n));
+function defaultFormatTimestamp(ts: number): string {
+  const date = new Date(ts);
   const hh = String(date.getHours()).padStart(2, "0");
   const mm = String(date.getMinutes()).padStart(2, "0");
   const ss = String(date.getSeconds()).padStart(2, "0");
@@ -74,7 +81,7 @@ function defaultFormatTimestamp(ts: HighResTimestamp): string {
 
 function formatOrigin(origin: PulseOrigin): { origin: Record<string, string> } {
   const out: Record<string, string> = {
-    path: origin.originPath,
+    path: origin.serviceNamespace + "." + origin.serviceName,
   };
 
   if (origin.networkId) {
@@ -91,10 +98,14 @@ function formatSpan(span: PulseSpan | undefined): { trace: Record<string, string
 
   // Keep the useful tracing IDs; drop any overly verbose extras if present
   const { traceId, traceName, spanId, parentSpanId } = span;
-  const trace: Record<string, string> = { traceId, traceName, spanId };
+  const trace: Record<string, string> = {
+    traceId: encodeTraceId(traceId),
+    traceName,
+    spanId: encodeSpanId(spanId),
+  };
 
   if (parentSpanId) {
-    trace["parentSpanId"] = parentSpanId;
+    trace["parentSpanId"] = encodeSpanId(parentSpanId);
   }
 
   return { trace };

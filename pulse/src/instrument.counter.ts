@@ -6,12 +6,11 @@ import type { MetricAttributesSchema, CounterDataPoint, UpDownCounterDataPoint }
  * Basic counter instrument, which aggregates all increments in-memory until
  * they're flushed within the export interval.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export class PulseCounter<const TAttrs extends MetricAttributesSchema = {}> extends PulseInstrument<
-  TAttrs,
-  number,
-  number | bigint
-> {
+
+export class PulseCounter<
+  const TLabels extends string[] | null = null,
+  const TAttrs extends MetricAttributesSchema | null = null,
+> extends PulseInstrument<TLabels, TAttrs, number, number> {
   readonly type = "counter";
 
   protected accumulateValue(entry: InstrumentEntry<number | undefined>, value: number) {
@@ -38,12 +37,11 @@ export class PulseCounter<const TAttrs extends MetricAttributesSchema = {}> exte
  * UpDownCounter instrument which allows both incrementing and decrementing
  * values.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export class PulseUpDownCounter<const TAttrs extends MetricAttributesSchema = {}> extends PulseInstrument<
-  TAttrs,
-  number,
-  number | bigint
-> {
+
+export class PulseUpDownCounter<
+  const TLabels extends string[] | null = null,
+  const TAttrs extends MetricAttributesSchema | null = null,
+> extends PulseInstrument<TLabels, TAttrs, number, number> {
   readonly type = "up_down_counter";
 
   protected accumulateValue(entry: InstrumentEntry<number | undefined>, value: number) {

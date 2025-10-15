@@ -1,15 +1,16 @@
 import { it, expect, beforeEach } from "vitest";
 
-import type { Checkpoint } from "@direct.dev/checkpoint";
 import { check } from "@direct.dev/checkpoint";
 
 import { PulseGauge } from "../instrument.gauge.js";
 import type { GaugeDataPoint } from "../typings.js";
 
-let gauge: PulseGauge<{ method: Checkpoint<string> }>;
+const labels = null;
+const attrs = check.shape({ method: check.str });
+let gauge: PulseGauge<typeof labels, typeof attrs>;
 
 beforeEach(() => {
-  gauge = new PulseGauge("rpc_inflight_requests", { unit: "1" }, { method: check.str });
+  gauge = new PulseGauge("rpc_inflight_requests", { unit: "1" }, labels, attrs);
 });
 
 it("flush() returns [] when nothing recorded", () => {
@@ -17,8 +18,8 @@ it("flush() returns [] when nothing recorded", () => {
 });
 
 it("emits the last recorded value per attribute set and clears after flush", () => {
-  gauge.record(undefined, { method: "eth_call" }, 1);
-  gauge.record(undefined, { method: "eth_call" }, 2); // last one wins
+  gauge.record(undefined, 1, { method: "eth_call" });
+  gauge.record(undefined, 2, { method: "eth_call" }); // last one wins
 
   const out = gauge.flush().collected as [GaugeDataPoint, ...GaugeDataPoint[]];
   expect(out).toHaveLength(1);
@@ -34,8 +35,8 @@ it("emits the last recorded value per attribute set and clears after flush", () 
 });
 
 it("separates values by distinct attribute sets within a window", () => {
-  gauge.record(undefined, { method: "m1" }, 5);
-  gauge.record(undefined, { method: "m2" }, 10);
+  gauge.record(undefined, 5, { method: "m1" });
+  gauge.record(undefined, 10, { method: "m2" });
 
   const out = normalize(gauge.flush().collected as [GaugeDataPoint, ...GaugeDataPoint[]]);
   expect(out).toEqual(
@@ -50,9 +51,9 @@ it("separates values by distinct attribute sets within a window", () => {
 });
 
 it("overwrites earlier values per attribute before flush (last wins)", () => {
-  gauge.record(undefined, { method: "m" }, 3);
-  gauge.record(undefined, { method: "m" }, 7);
-  gauge.record(undefined, { method: "m" }, 11);
+  gauge.record(undefined, 3, { method: "m" });
+  gauge.record(undefined, 7, { method: "m" });
+  gauge.record(undefined, 11, { method: "m" });
 
   const out = gauge.flush().collected as [GaugeDataPoint, ...GaugeDataPoint[]];
   expect(out).toHaveLength(1);
@@ -61,14 +62,14 @@ it("overwrites earlier values per attribute before flush (last wins)", () => {
 });
 
 it("window isolation: successive flushes are independent", () => {
-  gauge.record(undefined, { method: "m1" }, 2);
+  gauge.record(undefined, 2, { method: "m1" });
 
   const first = gauge.flush().collected as [GaugeDataPoint, ...GaugeDataPoint[]];
   expect(first).toHaveLength(1);
   expect(first[0].value).toBe(2);
 
   // new window
-  gauge.record(undefined, { method: "m1" }, 5);
+  gauge.record(undefined, 5, { method: "m1" });
 
   const second = gauge.flush().collected as [GaugeDataPoint, ...GaugeDataPoint[]];
   expect(second).toHaveLength(1);
@@ -79,10 +80,10 @@ it("window isolation: successive flushes are independent", () => {
 });
 
 it("updates after a flush only affect the next flush", () => {
-  gauge.record(undefined, { method: "m" }, 10);
+  gauge.record(undefined, 10, { method: "m" });
   const before = gauge.flush().collected as [GaugeDataPoint, ...GaugeDataPoint[]];
 
-  gauge.record(undefined, { method: "m" }, 42);
+  gauge.record(undefined, 42, { method: "m" });
   const after = gauge.flush().collected as [GaugeDataPoint, ...GaugeDataPoint[]];
 
   expect(before).toHaveLength(1);
@@ -93,12 +94,12 @@ it("updates after a flush only affect the next flush", () => {
 });
 
 it("ignores non-finite values (NaN, +∞, -∞) and keeps prior finite value within the window", () => {
-  gauge.record(undefined, { method: "m" }, 8);
+  gauge.record(undefined, 8, { method: "m" });
 
   // non-finite updates are ignored
-  gauge.record(undefined, { method: "m" }, Number.NaN);
-  gauge.record(undefined, { method: "m" }, Number.POSITIVE_INFINITY);
-  gauge.record(undefined, { method: "m" }, Number.NEGATIVE_INFINITY);
+  gauge.record(undefined, Number.NaN, { method: "m" });
+  gauge.record(undefined, Number.POSITIVE_INFINITY, { method: "m" });
+  gauge.record(undefined, Number.NEGATIVE_INFINITY, { method: "m" });
 
   const out = gauge.flush().collected as [GaugeDataPoint, ...GaugeDataPoint[]];
   expect(out).toHaveLength(1);
@@ -110,8 +111,8 @@ it("ignores non-finite values (NaN, +∞, -∞) and keeps prior finite value wit
 });
 
 it("allows zero and negative finite values", () => {
-  gauge.record(undefined, { method: "zero" }, 0);
-  gauge.record(undefined, { method: "neg" }, -3);
+  gauge.record(undefined, 0, { method: "zero" });
+  gauge.record(undefined, -3, { method: "neg" });
 
   const out = normalize(gauge.flush().collected as [GaugeDataPoint, ...GaugeDataPoint[]]);
   expect(out).toEqual(
@@ -123,8 +124,8 @@ it("allows zero and negative finite values", () => {
 });
 
 it("preserves floating-point precision (last value wins)", () => {
-  gauge.record(undefined, { method: "m" }, 0.1);
-  gauge.record(undefined, { method: "m" }, 0.2);
+  gauge.record(undefined, 0.1, { method: "m" });
+  gauge.record(undefined, 0.2, { method: "m" });
 
   const out = gauge.flush().collected as [GaugeDataPoint, ...GaugeDataPoint[]];
   expect(out).toHaveLength(1);
@@ -132,10 +133,10 @@ it("preserves floating-point precision (last value wins)", () => {
 });
 
 it("handles interleaved attributes with independent last values", () => {
-  gauge.record(undefined, { method: "a" }, 1);
-  gauge.record(undefined, { method: "b" }, 10);
-  gauge.record(undefined, { method: "a" }, 2); // overwrites only 'a'
-  gauge.record(undefined, { method: "b" }, 11); // overwrites only 'b'
+  gauge.record(undefined, 1, { method: "a" });
+  gauge.record(undefined, 10, { method: "b" });
+  gauge.record(undefined, 2, { method: "a" }); // overwrites only 'a'
+  gauge.record(undefined, 11, { method: "b" }); // overwrites only 'b'
 
   const out = normalize(gauge.flush().collected as [GaugeDataPoint, ...GaugeDataPoint[]]);
   expect(out).toEqual(

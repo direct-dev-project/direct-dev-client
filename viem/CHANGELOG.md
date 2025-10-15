@@ -1,5 +1,12 @@
 # @direct.dev/viem
 
+## 0.7.0
+
+### Patch Changes
+
+- @direct.dev/client@0.7.0
+- @direct.dev/shared@0.7.0
+
 ## 0.6.3
 
 ### Patch Changes

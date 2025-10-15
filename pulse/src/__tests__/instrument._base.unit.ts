@@ -1,35 +1,23 @@
 import { describe, it, expect, beforeEach } from "vitest";
 
-import type { Checkpoint } from "@direct.dev/checkpoint";
 import { check } from "@direct.dev/checkpoint";
 
 import type { InstrumentEntry } from "../instrument._base.js";
 import { PulseInstrument } from "../instrument._base.js";
 import type { GaugeDataPoint, MetricAttributesSchema, PulseSpan } from "../typings.js";
 
-type AttrsA = { method: Checkpoint<string> };
-type AttrsB = { method: Checkpoint<string>; providerId: Checkpoint<string | null | undefined> };
+const labelsA = ["attempt:primary" as const, "attempt:failover" as const];
+const attrsA = check.shape({ method: check.str });
 
-let counterA: ProbeInstrument<AttrsA>;
-let counterB: ProbeInstrument<AttrsB>;
+const labelsB = ["attempt:primary" as const, "attempt:failover" as const];
+const attrsB = check.shape({ method: check.str, providerId: check.optional(check.str) });
+
+let counterA: ProbeInstrument<typeof labelsA, typeof attrsA>;
+let counterB: ProbeInstrument<typeof labelsB, typeof attrsB>;
 
 beforeEach(() => {
-  counterA = new ProbeInstrument<AttrsA>(
-    "rpc_request_count",
-    { unit: "1" },
-    {
-      method: check.str,
-    },
-  );
-
-  counterB = new ProbeInstrument<AttrsB>(
-    "rpc_error_count",
-    { unit: "1" },
-    {
-      method: check.str,
-      providerId: check.optional(check.str),
-    },
-  );
+  counterA = new ProbeInstrument("rpc_request_count", { unit: "1" }, labelsA, attrsA);
+  counterB = new ProbeInstrument("rpc_error_count", { unit: "1" }, labelsB, attrsB);
 });
 
 describe("attribute/value records", () => {
@@ -41,8 +29,8 @@ describe("attribute/value records", () => {
   });
 
   it("accepts optional attributes when present and correct", () => {
-    counterB.record(undefined, { method: "eth_call", providerId: "p1" }, 2);
-    counterB.record(undefined, { method: "eth_call", providerId: undefined }, 1);
+    counterB.record(undefined, 2, "attempt:primary", { method: "eth_call", providerId: "p1" });
+    counterB.record(undefined, 1, "attempt:failover", { method: "eth_call", providerId: undefined });
 
     const out = normalize(counterB.flush().collected as [GaugeDataPoint, ...GaugeDataPoint[]]);
     expect(out).toEqual(
@@ -52,7 +40,7 @@ describe("attribute/value records", () => {
           name: "rpc_error_count",
           unit: "1",
           value: 2,
-          attrs: { method: "eth_call", providerId: "p1" },
+          attrs: { attempt: "primary", method: "eth_call", providerId: "p1" },
           exemplars: [],
         },
         {
@@ -60,7 +48,7 @@ describe("attribute/value records", () => {
           name: "rpc_error_count",
           unit: "1",
           value: 1,
-          attrs: { method: "eth_call" },
+          attrs: { attempt: "failover", method: "eth_call", providerId: undefined },
           exemplars: [],
         },
       ]),
@@ -69,14 +57,15 @@ describe("attribute/value records", () => {
 
   it("appends a <name>_dropped metric when LRU evictions occur", () => {
     // capacity = 1 → evict on second distinct attrs
-    const small = new ProbeInstrument<AttrsA>(
+    const small = new ProbeInstrument(
       "rpc_small",
       { unit: "1", capacity: 1, exemplars: { strategy: "ring", capacity: 3 } },
-      { method: check.str },
+      labelsA,
+      attrsA,
     );
 
-    small.record(makeTrace("a"), { method: "A" }, 10);
-    small.record(makeTrace("b"), { method: "B" }, 20); // evict one series
+    small.record(makeTrace(new Uint8Array(0)), 10, "attempt:primary", { method: "A" });
+    small.record(makeTrace(new Uint8Array(0)), 20, "attempt:primary", { method: "B" }); // evict one series
 
     const { collected, dropped } = small.flush();
 
@@ -84,8 +73,8 @@ describe("attribute/value records", () => {
     expect(collected.length).toBe(1);
     expect(dropped).not.toBe(undefined);
 
-    expect(dropped?.value).toBe(1);
-    expect(dropped?.exemplars).toEqual([]);
+    expect(dropped?.[0].value).toBe(1);
+    expect(dropped?.[0].exemplars).toEqual([]);
 
     // whichever series remained should have its exemplars for the records it
     // saw
@@ -95,8 +84,11 @@ describe("attribute/value records", () => {
 
 describe("exemplar records", () => {
   it("collects exemplars when trace is provided and flushes them", () => {
-    counterA.record(makeTrace("1"), { method: "m" }, 1);
-    counterA.record(makeTrace("2"), { method: "m" }, 2);
+    const trace1Id = new Uint8Array(0);
+    const trace2Id = new Uint8Array(0);
+
+    counterA.record(makeTrace(trace1Id), 1, "attempt:primary", { method: "m" });
+    counterA.record(makeTrace(trace2Id), 2, "attempt:primary", { method: "m" });
 
     const out = counterA.flush().collected as [GaugeDataPoint];
 
@@ -105,8 +97,9 @@ describe("exemplar records", () => {
     expect(out[0].exemplars.length).toBeGreaterThan(0);
 
     const traceIds = new Set(out[0].exemplars.map((e) => e.span.traceId));
-    expect(traceIds.has("trace-1")).toBe(true);
-    expect(traceIds.has("trace-2")).toBe(true);
+
+    expect(traceIds.has(trace1Id)).toBe(true);
+    expect(traceIds.has(trace2Id)).toBe(true);
 
     // second flush is empty (state + exemplars cleared)
     expect(counterA.flush().collected).toEqual([]);
@@ -114,15 +107,19 @@ describe("exemplar records", () => {
 
   it("caps exemplars per series according to ring capacity", () => {
     // Smaller exemplar capacity to make behavior crisp
-    const capped = new ProbeInstrument<AttrsA>(
+    const capped = new ProbeInstrument(
       "rpc_req_count_cap",
       { unit: "1", capacity: 50, exemplars: { strategy: "ring", capacity: 2 } },
-      { method: check.str },
+      labelsA,
+      attrsA,
     );
 
-    capped.record(makeTrace("a"), { method: "m" }, 1);
-    capped.record(makeTrace("b"), { method: "m" }, 2);
-    capped.record(makeTrace("c"), { method: "m" }, 3); // should evict the oldest in ring
+    const trace1Id = new Uint8Array(0);
+    const trace2Id = new Uint8Array(0);
+    const trace3Id = new Uint8Array(0);
+    capped.record(makeTrace(trace1Id), 1, "attempt:primary", { method: "m" });
+    capped.record(makeTrace(trace2Id), 2, "attempt:primary", { method: "m" });
+    capped.record(makeTrace(trace3Id), 3, "attempt:primary", { method: "m" }); // should evict the oldest in ring
 
     const out = capped.flush().collected as [GaugeDataPoint];
     expect(out[0].exemplars).toBeDefined();
@@ -131,22 +128,25 @@ describe("exemplar records", () => {
     const traceIDs = new Set(out[0].exemplars.map((e) => e.span.traceId));
 
     // we expect only the last two of a/b/c to remain
-    expect(traceIDs.has("trace-b")).toBe(true);
-    expect(traceIDs.has("trace-c")).toBe(true);
+    expect(traceIDs.has(trace2Id)).toBe(true);
+    expect(traceIDs.has(trace3Id)).toBe(true);
   });
 
   it("keeps exemplars isolated per attribute set", () => {
-    counterA.record(makeTrace("x1"), { method: "m1" }, 1);
-    counterA.record(makeTrace("x2"), { method: "m1" }, 2);
-    counterA.record(makeTrace("y1"), { method: "m2" }, 3);
+    const traceX1Id = new Uint8Array(0);
+    const traceX2Id = new Uint8Array(0);
+    const traceY1Id = new Uint8Array(0);
+    counterA.record(makeTrace(traceX1Id), 1, "attempt:primary", { method: "m" });
+    counterA.record(makeTrace(traceX2Id), 2, "attempt:primary", { method: "m" });
+    counterA.record(makeTrace(traceY1Id), 3, "attempt:failover", { method: "m" });
 
     const out = counterA.flush().collected as GaugeDataPoint[];
     // find per-attr datapoints
-    const m1 = out.find((it) => it.attrs["method"] === "m1");
-    const m2 = out.find((it) => it.attrs["method"] === "m2");
+    const primary = out.find((it) => it.attrs["attempt"] === "primary");
+    const failover = out.find((it) => it.attrs["attempt"] === "failover");
 
-    expect(m1?.exemplars.map((e) => e.span.traceId)).toEqual(expect.arrayContaining(["trace-x1", "trace-x2"]));
-    expect(m2?.exemplars.map((e) => e.span.traceId)).toEqual(expect.arrayContaining(["trace-y1"]));
+    expect(primary?.exemplars.map((e) => e.span.traceId)).toEqual(expect.arrayContaining([traceX1Id, traceX2Id]));
+    expect(failover?.exemplars.map((e) => e.span.traceId)).toEqual(expect.arrayContaining([traceY1Id]));
   });
 });
 
@@ -165,14 +165,14 @@ function normalize<T extends GaugeDataPoint[]>(points: T): T {
 }
 
 // Utility to create traces
-function makeTrace(id: string): PulseSpan {
+function makeTrace(id: Uint8Array): PulseSpan {
   return {
-    traceId: `trace-${id}`,
+    traceId: id,
     traceName: "trace",
     traceSampled: true,
     parentSpanId: undefined,
     parentLink: undefined,
-    spanId: `span-${id}`,
+    spanId: id,
     spanKind: "INTERNAL",
   };
 }
@@ -181,7 +181,10 @@ function makeTrace(id: string): PulseSpan {
  * A minimal probe instrument to test PulseInstrument's attribute codec
  * behavior.
  */
-class ProbeInstrument<const TAttrs extends MetricAttributesSchema> extends PulseInstrument<TAttrs, number> {
+class ProbeInstrument<
+  const TLabels extends string[],
+  const TAttrs extends MetricAttributesSchema,
+> extends PulseInstrument<TLabels, TAttrs, number> {
   readonly type = "gauge";
 
   protected accumulateValue(entry: InstrumentEntry<number | undefined>, value: number) {

@@ -2,21 +2,20 @@ import { describe, it, expect } from "vitest";
 
 import { makeExemplarReservoir } from "../instrument._exemplars.js";
 import type { MetricExemplar } from "../typings.js";
-import { now } from "../util.now.js";
 
 // helper to create exemplars quickly
-function makeExemplar(value: number, n = ""): MetricExemplar {
+function makeExemplar(value: number, id: Uint8Array = new Uint8Array(0)): MetricExemplar {
   return {
     span: {
-      traceId: `t${n || value}`,
+      traceId: id,
       traceName: "exemplar",
       traceSampled: true,
       parentSpanId: undefined,
       parentLink: undefined,
-      spanId: `s${n || value}`,
+      spanId: id,
       spanKind: "INTERNAL",
     },
-    timestamp: now(),
+    timestamp: Date.now(),
     value,
   };
 }

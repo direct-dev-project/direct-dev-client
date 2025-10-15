@@ -23,8 +23,8 @@ it("parses full head with pending block and cache", () => {
       revalidateSet: [],
       requestToResponseMap: [
         {
-          requestHash: "abc",
-          responseHash: "def",
+          requestHash: "1234567890abcdefghi",
+          responseHash: "1234567890abcdefghi",
           expiresAt: new Date().toISOString(),
         },
       ],
@@ -33,7 +33,7 @@ it("parses full head with pending block and cache", () => {
 
   const result = syncHeadSchema(input);
   expect(result.pendingBlockHeight?.blockHeight).toBe("101");
-  expect(result.primer?.requestToResponseMap?.[0]?.requestHash).toBe("abc");
+  expect(result.primer?.requestToResponseMap?.[0]?.requestHash).toBe("1234567890abcdefghi");
   expect(JSON.stringify(input)).toEqual(JSON.stringify(result));
 });
 

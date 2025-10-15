@@ -76,8 +76,8 @@ export const rpcResponseSchema = checkpoint<DirectRPCResultResponse | DirectRPCE
 export const rpcHeadSchema = checkpoint<DirectRPCHead>(
   "rpcHead",
   check.shape({
-    blockHeight: check.optional(check.typedStr<RPCBlockHeight>()),
-    blockHeightExpiresAt: check.optional(check.date),
+    blockHeight: check.optional(check.nullish(check.typedStr<RPCBlockHeight>())),
+    blockHeightExpiresAt: check.optional(check.nullish(check.date)),
   }),
 );
 

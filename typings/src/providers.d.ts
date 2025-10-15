@@ -2,10 +2,16 @@
  * Definition of supported Web3 Data providers within the Direct.dev
  * infrastructure.
  */
-type SupportedProviderId = "ankr" | "alchemy" | "drpc" | "infura" | "quicknode";
+type SupportedProviderId = "ankr" | "drpc";
 
 /**
- * Definition of supported Web3 chain types|  used to determine how to correctly
+ * Extension of the list of supported providers, including internally used
+ * providers.
+ */
+type InternalProviderId = SupportedProviderId | "envio" | "direct.dev";
+
+/**
+ * Definition of supported Web3 chain types used to determine how to correctly
  * handle analysis of incoming requests and responses.
  */
 type SupportedChainType = "EVM" | "SVM";

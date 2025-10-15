@@ -12,11 +12,11 @@ type DataPoint = {
  * exports number of matches within each defined bucket within the export
  * interval.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export class PulseHistogram<const TAttrs extends MetricAttributesSchema = {}> extends PulseInstrument<
-  TAttrs,
-  DataPoint
-> {
+
+export class PulseHistogram<
+  const TLabels extends string[] | null = null,
+  const TAttrs extends MetricAttributesSchema | null = null,
+> extends PulseInstrument<TLabels, TAttrs, DataPoint, number> {
   readonly type = "histogram";
 
   /**
@@ -31,9 +31,10 @@ export class PulseHistogram<const TAttrs extends MetricAttributesSchema = {}> ex
       unit: string;
       bounds: [number, ...number[]];
     },
-    attributeSchema: TAttrs = {} as TAttrs,
+    labels: TLabels = null as TLabels,
+    attributeSchema: TAttrs = null as TAttrs,
   ) {
-    super(name, options, attributeSchema);
+    super(name, options, labels, attributeSchema);
 
     // validate bounds: strictly increasing & finite
     if (!Number.isFinite(options.bounds[0]) || options.bounds[0] < 0) {

@@ -46,33 +46,33 @@ it("parses cache.delta event", () => {
     event: "cache.delta",
     data: {
       syncSet: {
-        checksum: "xyz",
-        added: ["a", "b"],
-        removed: ["c"],
+        checksum: "1234567890abcdef123",
+        added: ["1234567890abcdef456", "1234567890abcdef789"],
+        removed: ["1234567890abcdefabc"],
       },
       revalidateSet: {
-        checksum: "xyz",
-        added: ["a", "b"],
-        removed: ["c"],
+        checksum: "1234567890abcdef123",
+        added: ["1234567890abcdef456", "1234567890abcdef789"],
+        removed: ["1234567890abcdefabc"],
       },
     },
   });
   expect(result.event).toBe("cache.delta");
-  expect((result as wire.CacheDeltaSyncEvent).data.syncSet.added).toContain("a");
+  expect((result as wire.CacheDeltaSyncEvent).data.syncSet.added).toContain("1234567890abcdef456");
 });
 
 it("parses cache.continuation event", () => {
   const result = syncEventSchema({
     event: "cache.continuation",
     data: {
-      checksum: "abc",
+      checksum: "1234567890abcdefghi",
       unchanged: [{ requestIndex: 0, expiresAt: new Date() }],
       patches: [{ requestIndex: 1, patchStr: "abc", expiresAt: new Date() }],
       replacements: [{ requestIndex: 2, response: { id: 1, result: "abc" }, expiresAt: new Date() }],
     },
   });
   expect(result.event).toBe("cache.continuation");
-  expect((result as wire.CacheContinuationSyncEvent).data.checksum).toBe("abc");
+  expect((result as wire.CacheContinuationSyncEvent).data.checksum).toBe("1234567890abcdefghi");
   expect((result as wire.CacheContinuationSyncEvent).data.unchanged[0]?.requestIndex).toBe(0);
   expect((result as wire.CacheContinuationSyncEvent).data.patches[0]?.requestIndex).toBe(1);
   expect((result as wire.CacheContinuationSyncEvent).data.patches[0]?.patchStr).toBe("abc");

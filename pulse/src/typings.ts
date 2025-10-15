@@ -50,11 +50,6 @@ export type PulseOrigin = {
    * if not relevant).
    */
   continentId: string | undefined;
-
-  /**
-   * Pre-computed path for origin (<serviceId>.<subServiceId>.<moduleName>).
-   */
-  originPath: string;
 };
 
 /**
@@ -77,7 +72,7 @@ export type PulseSpan = {
    * The ID of the trace, auto-generated if one is not explicitly provided in
    * order to create a new trace.
    */
-  traceId: string;
+  traceId: Uint8Array;
 
   /**
    * Name of the flow that initiated the trace; carried with through all levels
@@ -95,17 +90,17 @@ export type PulseSpan = {
   /**
    * Optionally ID of a parent span, which this trace is a child of.
    */
-  parentSpanId: string | null | undefined;
+  parentSpanId: Uint8Array | null | undefined;
 
   /**
    * Optionally contains a collection of references to other spans to link to.
    */
-  parentLink: { traceName: string; traceId: string; spanId: string } | undefined;
+  parentLink: { traceName: string; traceId: Uint8Array; spanId: Uint8Array } | undefined;
 
   /**
    * Auto-generated ID for the specific span being handled.
    */
-  spanId: string;
+  spanId: Uint8Array;
 
   /**
    * The kind of span, matching OpenTelemetry specification.
@@ -132,25 +127,6 @@ export type LogLevel = "verbose" | "debug" | "info" | "warn" | "error" | "fatal"
 export type LogFields = Record<string, unknown>;
 
 /**
- * Writers receive log statements and are responsible for outputting / storing
- * the data.
- */
-export type LogWriter = (
-  level: Exclude<LogLevel, "silent">,
-  timestamp: HighResTimestamp,
-  message: string,
-  origin: PulseOrigin,
-  span: PulseSpan | undefined,
-  context: PulseContext | undefined,
-  fields: LogFields,
-) => Promise<void>;
-
-/**
- * Branded subtype representing a high-res timestamp compatible with OTLP.
- */
-export type HighResTimestamp = string & { readonly __brand: unique symbol };
-
-/**
  * Attributes accepted on exported metrics.
  */
 export type MetricAttributes = Record<string, string | number | boolean | null | undefined>;
@@ -160,15 +136,16 @@ export type MetricAttributes = Record<string, string | number | boolean | null |
  * instruments.
  */
 
-export type MetricAttributesSchema = { [K in keyof MetricAttributes]: Checkpoint<MetricAttributes[K]> };
+export type MetricAttributesSchema = Checkpoint<MetricAttributes> & {
+  keys: string[];
+};
 
 /**
  * TypeScript gymnastics to infer specific shape of MetricAttributes from a
  * given schema.
  */
-export type MetricAttributesFromSchema<T extends MetricAttributesSchema> = {
-  [K in keyof T]: T[K] extends Checkpoint<infer U extends MetricAttributes[keyof MetricAttributes]> ? U : never;
-};
+export type MetricAttributesFromSchema<T extends MetricAttributesSchema> =
+  T extends Checkpoint<infer U extends MetricAttributes> ? U : never;
 
 /**
  * Exemplars are used to associate specific meassurements (metrics) with
@@ -178,7 +155,7 @@ export type MetricExemplar = {
   /**
    * The timestamp at which this exemplar was recorded.
    */
-  timestamp: HighResTimestamp;
+  timestamp: number;
 
   /**
    * The value of the recorded exemplar.
@@ -211,7 +188,7 @@ export type CounterDataPoint = {
    * The value to increment the counter by, aggregated since last flush of the
    * instrument.
    */
-  value: number | bigint;
+  value: number;
 
   /**
    * Attributes to associate with the data point.
@@ -313,67 +290,10 @@ export type HistogramDataPoint = {
 export type MetricDataPoint = CounterDataPoint | UpDownCounterDataPoint | GaugeDataPoint | HistogramDataPoint;
 
 /**
- * Grouping of metrics by instrument, optimized for exporting.
- */
-export type MetricDataPointGroup =
-  | {
-      name: string;
-      unit: string;
-      type: CounterDataPoint["type"];
-      dataPoints: CounterDataPoint[];
-    }
-  | {
-      name: string;
-      unit: string;
-      type: UpDownCounterDataPoint["type"];
-      dataPoints: UpDownCounterDataPoint[];
-    }
-  | {
-      name: string;
-      unit: string;
-      type: GaugeDataPoint["type"];
-      dataPoints: GaugeDataPoint[];
-    }
-  | {
-      name: string;
-      unit: string;
-      type: HistogramDataPoint["type"];
-      dataPoints: HistogramDataPoint[];
-    };
-
-/**
- * Exporter that receives collected metrics, responsible for ingesting data
- * points into our telemetry database.
- */
-export type MetricExporter = (
-  timestamp: HighResTimestamp,
-  origin: PulseOrigin,
-  metrics: MetricDataPointGroup[],
-) => Promise<void>;
-
-/**
  * Events recorded as part of a trace span.
  */
 export type TraceEvent = {
-  timeStamp: HighResTimestamp;
+  timeStamp: number;
   name: string;
   attributes: LogFields | undefined;
 };
-
-/**
- * Exporter receiving traces as they are created during runtime, responsible for
- * ingesting the entry into our telemetry database.
- */
-export type TraceExporter = (
-  origin: PulseOrigin,
-  span: PulseSpan,
-  context: PulseContext,
-  attributes: LogFields | undefined,
-  events: TraceEvent[],
-  result: {
-    startTimestamp: HighResTimestamp;
-    endTimestamp: HighResTimestamp;
-    success: boolean;
-    message: string | undefined;
-  },
-) => Promise<void>;

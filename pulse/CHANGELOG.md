@@ -1,5 +1,17 @@
 # @direct.dev/pulse
 
+## 0.7.0
+
+### Minor Changes
+
+- dba5912: perf: major rewrite of Pulse to reduce CPU + memory overhead by 80-90%
+
+### Patch Changes
+
+- @direct.dev/checkpoint@0.7.0
+- @direct.dev/shared@0.7.0
+- @direct.dev/wire@0.7.0
+
 ## 0.6.3
 
 ### Patch Changes

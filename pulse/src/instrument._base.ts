@@ -11,7 +11,6 @@ import type {
 } from "./typings.js";
 import type { AttributeCodec, SerializedMetricAttributes } from "./util.compile-attr-codec.js";
 import { compileAttrCodec } from "./util.compile-attr-codec.js";
-import { now } from "./util.now.js";
 
 export type InstrumentOptions = {
   /**
@@ -53,8 +52,8 @@ export type InstrumentEntry<TData> = {
  */
 
 export abstract class PulseInstrument<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const TAttrs extends MetricAttributesSchema = any,
+  const TLabels extends string[] | null = null,
+  const TAttrs extends MetricAttributesSchema | null = null,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TData = any,
   TValue extends number | bigint = number,
@@ -82,7 +81,7 @@ export abstract class PulseInstrument<
    * Pre-compiled codec for attributes, which allows aggregation of data points
    * per-attribute set in a fast and robust manner.
    */
-  #attrCodec: AttributeCodec<TAttrs>;
+  #attrCodec: AttributeCodec<TLabels, TAttrs>;
 
   /**
    * Cache of collected data points since last flushing
@@ -104,7 +103,8 @@ export abstract class PulseInstrument<
   constructor(
     name: string,
     options: Partial<InstrumentOptions> & { unit: string },
-    attributeSchema: TAttrs = {} as TAttrs,
+    labels: TLabels = null as TLabels,
+    attributeSchema: TAttrs = null as TAttrs,
   ) {
     options.capacity ??= 50;
     options.exemplars ??= { strategy: "ring", capacity: 3 };
@@ -124,28 +124,77 @@ export abstract class PulseInstrument<
     this.unit = options.unit;
 
     this.#options = options as InstrumentOptions;
-    this.#attrCodec = compileAttrCodec(name, attributeSchema);
+    this.#attrCodec = compileAttrCodec(name, labels, attributeSchema);
     this.#dataReservoir = new LRUCache(options.capacity, () => {
       // count dropped data points when eviction happens
       this.#droppedDataPointCount++;
     });
+
+    //
+    // pre-compute public record signature based on provided label presets +
+    // attribute schemas
+    //
+
+    if (labels != null && attributeSchema != null) {
+      // @ts-expect-error: applying override by hand based on provided inputs
+      this.record = (span, value, label, attrs) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.#record(span, value, label as any, attrs as any);
+    } else if (labels != null) {
+      // @ts-expect-error: applying override by hand based on provided inputs
+      this.record = (span, value, label) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.#record(span, value, label as any, null as any);
+    } else if (attributeSchema != null) {
+      // @ts-expect-error: applying override by hand based on provided inputs
+      this.record = (span, value, attrs) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.#record(span, value, null as any, attrs as any);
+    } else {
+      // @ts-expect-error: applying override by hand based on provided inputs
+      this.record = (span, value) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.#record(span, value, null as any, null as any);
+    }
   }
+
+  /**
+   * External signature, pre-computed depending on whether or not label presets
+   * and attribute schemas are available for this instrument.
+   */
+  record: TLabels extends string[]
+    ? TAttrs extends MetricAttributesSchema
+      ? (
+          span: PulseSpan | undefined,
+          value: TValue | null | undefined,
+          label: TLabels[number],
+          attrs: MetricAttributesFromSchema<TAttrs>,
+        ) => void
+      : (span: PulseSpan | undefined, value: TValue | null | undefined, label: TLabels[number]) => void
+    : TAttrs extends MetricAttributesSchema
+      ? (
+          span: PulseSpan | undefined,
+          value: TValue | null | undefined,
+          attrs: MetricAttributesFromSchema<TAttrs>,
+        ) => void
+      : (span: PulseSpan | undefined, value: TValue | null | undefined) => void;
 
   /**
    * Record a new value into this instrument; signature allows for
    * per-instrument specification of desired inputs.
    */
-  record(
+  #record(
     span: PulseSpan | undefined,
-    attrs: MetricAttributesFromSchema<TAttrs>,
     value: TValue | null | undefined,
+    label: TLabels extends string[] ? TLabels[number] : null,
+    attrs: TAttrs extends MetricAttributesSchema ? MetricAttributesFromSchema<TAttrs> : null,
   ): void {
     if (value == null) {
       // ignore nullish values, there is nothing to collect
       return;
     }
 
-    const attrKey = this.#attrCodec.serialize(attrs);
+    const attrKey = this.#attrCodec.serialize(label, attrs);
     const entry: InstrumentEntry<TData | undefined> = this.#dataReservoir.get(attrKey) ?? {
       exemplars: makeExemplarReservoir(this.#options.exemplars),
       value: undefined,
@@ -156,7 +205,7 @@ export abstract class PulseInstrument<
     if (span?.traceSampled && bucketIndex !== null) {
       // if a trace was provided, then add exemplar for the recorded metrics
       entry.exemplars.add(bucketIndex, {
-        timestamp: now(),
+        timestamp: Date.now(),
         span,
         value,
       });
@@ -188,20 +237,22 @@ export abstract class PulseInstrument<
    */
   flush(): {
     collected: MetricDataPoint[];
-    dropped: CounterDataPoint | undefined;
+    dropped: [CounterDataPoint] | undefined;
   } {
     try {
       const size = this.#dataReservoir.size;
-      const dropped: CounterDataPoint | undefined =
+      const dropped: [CounterDataPoint] | undefined =
         this.#droppedDataPointCount > 0
-          ? {
-              type: "counter",
-              name: `${this.name}_dropped`,
-              unit: "1",
-              value: this.#droppedDataPointCount,
-              attrs: {},
-              exemplars: [],
-            }
+          ? [
+              {
+                type: "counter",
+                name: `${this.name}_dropped`,
+                unit: "1",
+                value: this.#droppedDataPointCount,
+                attrs: {},
+                exemplars: [],
+              },
+            ]
           : undefined;
 
       if (size === 0) {

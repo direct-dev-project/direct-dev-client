@@ -1,5 +1,12 @@
 # @direct.dev/checkpoint
 
+## 0.7.0
+
+### Patch Changes
+
+- @direct.dev/shared@0.7.0
+- @direct.dev/wire@0.7.0
+
 ## 0.6.3
 
 ### Patch Changes

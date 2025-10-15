@@ -1,12 +1,12 @@
+import type { AnyInstrument } from "./_pulse.js";
 import { Pulse } from "./_pulse.js";
-import type { PulseInstrument } from "./instrument._base.js";
 import type { CounterDataPoint, GaugeDataPoint, HistogramDataPoint, UpDownCounterDataPoint } from "./typings.js";
 
 /**
  * Mock of Pulse which guarantess no telemetry export happens
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export class MockPulse<TInstruments extends Record<string, PulseInstrument> = any> extends Pulse<TInstruments> {
+export class MockPulse<TInstruments extends Record<string, AnyInstrument> = any> extends Pulse<TInstruments> {
   /**
    * Collection of CounterDataPoints exported when calling `.flush()`.
    */
@@ -43,36 +43,43 @@ export class MockPulse<TInstruments extends Record<string, PulseInstrument> = an
         logLevel: "*:silent",
         logSamples: "*:0",
         traceSamples: "*:0",
-        logWriter: noop,
-        traceExporter: noop,
 
         // override metric exporter to aggregate datapoints in-memory to be
         // inspected upon testing
         metricExportIntervalMs: 0,
-        metricPrefix: "",
-        metricExporter: async (timestamp, origin, metrics) => {
-          metrics.forEach((metric) => {
-            switch (metric.type) {
-              case "counter":
-                this.counters.set(metric.name, [...(this.counters.get(metric.name) ?? []), ...metric.dataPoints]);
-                break;
 
-              case "up_down_counter":
-                this.upDownCounters.set(metric.name, [
-                  ...(this.upDownCounters.get(metric.name) ?? []),
-                  ...metric.dataPoints,
-                ]);
-                break;
+        exporter: () => ({
+          log: noop,
+          trace: noop,
+          flush: noop,
 
-              case "gauge":
-                this.gauges.set(metric.name, [...(this.gauges.get(metric.name) ?? []), ...metric.dataPoints]);
-                break;
+          metrics: (metrics) => {
+            metrics.forEach(({ name, metrics }) => {
+              switch (metrics[0].type) {
+                case "counter":
+                  this.counters.set(name, [...(this.counters.get(name) ?? []), ...(metrics as CounterDataPoint[])]);
+                  break;
 
-              case "histogram":
-                this.histograms.set(metric.name, [...(this.histograms.get(metric.name) ?? []), ...metric.dataPoints]);
-            }
-          });
-        },
+                case "up_down_counter":
+                  this.upDownCounters.set(name, [
+                    ...(this.upDownCounters.get(name) ?? []),
+                    ...(metrics as UpDownCounterDataPoint[]),
+                  ]);
+                  break;
+
+                case "gauge":
+                  this.gauges.set(name, [...(this.gauges.get(name) ?? []), ...(metrics as GaugeDataPoint[])]);
+                  break;
+
+                case "histogram":
+                  this.histograms.set(name, [
+                    ...(this.histograms.get(name) ?? []),
+                    ...(metrics as HistogramDataPoint[]),
+                  ]);
+              }
+            });
+          },
+        }),
       },
       instruments,
     );
@@ -81,7 +88,7 @@ export class MockPulse<TInstruments extends Record<string, PulseInstrument> = an
   /**
    * @override Deactivate support for automatic exporting
    */
-  activateExport() {
+  activateAutoExport() {
     // noop
   }
 
@@ -103,8 +110,8 @@ export class MockPulse<TInstruments extends Record<string, PulseInstrument> = an
    * Flushes metrics by running exporting (which flushes immediately), and
    * returns aggregates collected by the exporter method.
    */
-  async flush() {
-    await this.flush();
+  async export() {
+    await super.export();
   }
 }
 

@@ -476,7 +476,8 @@ export class DirectRequestRouter {
         continue;
       }
 
-      // if we're waiting for the head of a response, then parse it as such
+      // head segments are used to quickly deliver block height and prove
+      // liveness of the server
       if (segment.type === "head") {
         const head = segment.value;
 

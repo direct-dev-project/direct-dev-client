@@ -1,5 +1,14 @@
 # @direct.dev/client
 
+## 0.7.1
+
+### Patch Changes
+
+- cd761ac: refactor: allow overriding DirectTelemetryManager for external metric aggregation
+  - @direct.dev/checkpoint@0.7.1
+  - @direct.dev/shared@0.7.1
+  - @direct.dev/wire@0.7.1
+
 ## 0.7.0
 
 ### Patch Changes

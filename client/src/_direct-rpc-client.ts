@@ -155,7 +155,7 @@ export class DirectRPCClient {
    */
   readonly #onBlockHeightHandlers = new Set<(blockHeight: RPCBlockHeight, expiresAt: Date) => void>();
 
-  constructor(rawConfig: DirectRPCClientConfig) {
+  constructor(rawConfig: DirectRPCClientConfig, TelemetryManager = DirectTelemetryManager) {
     const config = configSchema(rawConfig);
 
     // warn if one or more invalid config properties have been provided
@@ -192,7 +192,7 @@ export class DirectRPCClient {
     });
     this.#cacheManager = new DirectCacheManager(this.#clockManager);
 
-    this.#telemetryManager = new DirectTelemetryManager({
+    this.#telemetryManager = new TelemetryManager({
       projectId: config.projectId,
       networkId: config.networkId,
       logLevel: config.logLevel ?? "info",

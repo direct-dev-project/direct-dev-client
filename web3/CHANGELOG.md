@@ -1,5 +1,12 @@
 # @direct.dev/web3
 
+## 0.7.1
+
+### Patch Changes
+
+- Updated dependencies [cd761ac]
+  - @direct.dev/client@0.7.1
+
 ## 0.7.0
 
 ### Patch Changes

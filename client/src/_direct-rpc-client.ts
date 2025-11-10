@@ -490,3 +490,6 @@ export function makeDirectRPCClient(config: DirectRPCClientConfig): DirectRPCCli
 }
 
 const clientCache = new Map<string, DirectRPCClient>();
+
+// re-export telemetry manager for internal usage
+export { DirectTelemetryManager };

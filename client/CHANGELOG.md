@@ -1,5 +1,14 @@
 # @direct.dev/client
 
+## 0.7.2
+
+### Patch Changes
+
+- 05f3bf6: chore: export DirectTelemetryManager for internal usage
+  - @direct.dev/checkpoint@0.7.2
+  - @direct.dev/shared@0.7.2
+  - @direct.dev/wire@0.7.2
+
 ## 0.7.1
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @direct.dev/ethers-v5
 
+## 0.7.2
+
+### Patch Changes
+
+- Updated dependencies [05f3bf6]
+  - @direct.dev/client@0.7.2
+  - @direct.dev/shared@0.7.2
+
 ## 0.7.1
 
 ### Patch Changes
